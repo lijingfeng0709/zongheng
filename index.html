@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>纵横 · 单机版</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <!-- ============ HUD ============ -->
+  <div id="hud" class="hidden">
+    <div class="hud-left">
+      <div class="avatar" id="hudAvatar">骑</div>
+      <div class="pl">
+        <div class="pl-top">
+          <span class="pname" id="hudName">无名散人</span>
+          <span class="plv" id="hudLv">Lv.1</span>
+        </div>
+        <div class="bar hp"><i id="barHp"></i><span id="txtHp">0/0</span></div>
+        <div class="bar mp"><i id="barMp"></i><span id="txtMp">0/0</span></div>
+        <div class="bar exp"><i id="barExp"></i><span id="txtExp">0/0</span></div>
+      </div>
+    </div>
+
+    <div class="hud-right">
+      <div class="res gold"><em>◈</em><b id="hudGold">0</b></div>
+      <div class="res rep"><em>✦</em><b id="hudRep">0</b></div>
+      <div class="res zone" id="hudZone">落霞城</div>
+    </div>
+
+    <div class="quest-hud" id="questHud"></div>
+    <div class="log-hud" id="logHud"></div>
+
+    <div class="bottom-bar">
+      <div class="stance-box" id="stanceHud">
+        <span class="st-name">进攻姿态</span><span class="st-key">Q 切换</span>
+      </div>
+      <div class="skillbar" id="skillbar"></div>
+    </div>
+
+    <div class="hud-btns">
+      <button data-panel="char">角色<kbd>C</kbd></button>
+      <button data-panel="bag">背包<kbd>I</kbd></button>
+      <button data-panel="skills">技能<kbd>K</kbd></button>
+      <button data-panel="quests">任务<kbd>J</kbd></button>
+      <button data-panel="faction">势力<kbd>F</kbd></button>
+      <button data-panel="map">地图<kbd>M</kbd></button>
+      <button data-panel="help">帮助<kbd>H</kbd></button>
+      <button data-panel="cloud">云存档<kbd>U</kbd></button>
+    </div>
+
+    <div class="prompt hidden" id="prompt"></div>
+  </div>
+
+  <!-- ============ 面板 ============ -->
+  <div id="panelWrap" class="hidden">
+    <div id="panel" class="panel"></div>
+  </div>
+
+  <!-- ============ 浮动提示 ============ -->
+  <div id="toasts"></div>
+  <div id="tip" class="hidden"></div>
+
+  <!-- ============ 开始界面（登录 → 卡槽 → 建角色） ============ -->
+  <div id="start">
+    <div class="start-bg"></div>
+    <div class="start-inner">
+      <div class="brand">
+        <h1>纵 横</h1>
+        <p class="sub">单机版 · 数据流的世界</p>
+        <p class="lore">
+          灵恸的世界里，所有“其他玩家”都是活着的人。<br />
+          他们刷副本、抢首领、发动帮战——而你在不登录的时候，世界依然在转。
+        </p>
+      </div>
+
+      <!-- ① 登录 / 注册 -->
+      <div class="gate" id="viewAuth">
+        <div class="gate-tabs">
+          <button class="gate-tab on" data-tab="login">登 录</button>
+          <button class="gate-tab" data-tab="reg">注 册</button>
+        </div>
+
+        <div class="gate-pane" data-pane="login">
+          <div class="gf"><label>账号</label>
+            <input id="lgAccount" maxlength="12" placeholder="你的账号" autocomplete="username" /></div>
+          <div class="gf"><label>密码</label>
+            <input id="lgPass" type="password" maxlength="32" placeholder="至少 6 位" autocomplete="current-password" /></div>
+          <button class="btn primary wide" id="btnLogin">登 　录</button>
+          <div class="gf-hint">还没有账号？点上方「注册」创建。一个账号可存 3 个独立角色。</div>
+        </div>
+
+        <div class="gate-pane hidden" data-pane="reg">
+          <div class="gf"><label>账号</label>
+            <input id="rgAccount" maxlength="12" placeholder="2–12 位，字母 / 数字 / 下划线 / 汉字" autocomplete="username" /></div>
+          <div class="gf"><label>姓名</label>
+            <input id="rgName" maxlength="12" placeholder="游戏内显示的名字，全服唯一" /></div>
+          <div class="gf"><label>密码</label>
+            <input id="rgPass" type="password" maxlength="32" placeholder="至少 6 位" autocomplete="new-password" /></div>
+          <div class="gf"><label>确认</label>
+            <input id="rgPass2" type="password" maxlength="32" placeholder="再输一次" autocomplete="new-password" /></div>
+          <button class="btn primary wide" id="btnRegister">注 册 并 进 入</button>
+          <div class="gf-hint">账号与姓名都不能重复。新玩家必须先注册才能进入。</div>
+        </div>
+
+        <div class="gate-msg" id="gateMsg"></div>
+      </div>
+
+      <!-- ② 卡槽选择 -->
+      <div class="gate hidden" id="viewSlots">
+        <div class="gate-bar">
+          <span id="slotHello">旅人</span>
+          <span class="gate-links"><a data-act="logout">退出登录</a></span>
+        </div>
+        <div class="slot-list" id="slotList"></div>
+        <div class="gate-msg" id="slotMsg"></div>
+      </div>
+
+      <!-- ③ 新建角色 -->
+      <div class="gate hidden" id="viewCreate">
+        <div class="gate-bar">
+          <span id="createTitle">新建角色</span>
+          <span class="gate-links"><a data-act="back">返回卡槽</a></span>
+        </div>
+        <div class="cls-pick" id="clsPick"></div>
+        <div class="gf" style="margin-top:14px"><label>角色名</label>
+          <input id="charName" maxlength="8" placeholder="留空则用你的姓名" /></div>
+        <button class="btn primary wide" id="btnStart" style="margin-top:6px">踏 入 灵 恸</button>
+      </div>
+
+      <div class="start-foot">
+        <span><kbd>W A S D</kbd> 移动</span>
+        <span><kbd>鼠标左键</kbd> 攻击（瞄准头部要害）</span>
+        <span><kbd>空格</kbd> 翻滚</span>
+        <span><kbd>1 2 3</kbd> 技能</span>
+        <span><kbd>R</kbd> 药水</span>
+        <span><kbd>Q</kbd> 切换姿态</span>
+        <span><kbd>E</kbd> 交互</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/util.js"></script>
+<script src="js/data.js"></script>
+<script src="js/state.js"></script>
+<script src="js/cloud.js"></script>
+<script src="js/account.js"></script>
+<script src="js/items.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/world.js"></script>
+<script src="js/render.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
