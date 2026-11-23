@@ -358,6 +358,7 @@ window.R = (function () {
     if (G.player) list.push(G.player);
     for (const a of G.allies) if (!a.dead) list.push(a);
     for (const e of G.enemies) if (!e.dead) list.push(e);
+    for (const a of (G.aiEnts || [])) if (!a.dead) list.push(a);
     list.sort((a, b) => a.y - b.y);
 
     for (const ent of list) {
@@ -365,6 +366,7 @@ window.R = (function () {
       if (ent.y < G.cam.y - 120 || ent.y > G.cam.y + vhW + 120) continue;
       if (ent.kind === 'player') drawPlayer(ent);
       else if (ent.kind === 'ally') drawAlly(ent);
+      else if (ent.kind === 'ai') drawAI(ent);
       else drawEnemy(ent);
     }
 
@@ -491,6 +493,112 @@ window.R = (function () {
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(200,215,235,0.85)';
     ctx.fillText(a.name, a.x, a.y - a.r - 18);
+  }
+
+  /* AI 玩家：会走、会抢怪、会主动来砍你 */
+  function drawAI(a) {
+    const r = a.r;
+    shadow(a.x, a.y, r);
+
+    // 敌对 / 红名光环
+    if (a.hostile || a.red) {
+      const pulse = 0.5 + Math.sin(G.t * 6) * 0.2;
+      ctx.strokeStyle = `rgba(255,80,80,${pulse})`;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.ellipse(a.x, a.y + r * 0.72, r * 1.25, r * 0.55, 0, 0, 6.283);
+      ctx.stroke();
+    }
+
+    if (a.invuln > 0 && Math.floor(G.t * 20) % 2 === 0) return;
+    if (a.hitFlash > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,.28)';
+      ctx.beginPath();
+      ctx.arc(a.x, a.y - 4, r + 3, 0, 6.283);
+      ctx.fill();
+    }
+
+    // 挥砍
+    if (a.swing > 0) {
+      const prog = 1 - a.swing / 0.18;
+      ctx.save();
+      ctx.translate(a.x, a.y - 4);
+      ctx.rotate(a.facing - 0.8 + prog * 1.6);
+      ctx.strokeStyle = U.hexA(a.hostile ? '#ff7b7b' : a.color, 0.85);
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(0, 0, a.arch === 'ranged' ? 22 : 30, -0.5, 0.5);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 披风
+    const back = a.facing + Math.PI;
+    ctx.fillStyle = U.hexA(a.gcolor, 0.34);
+    ctx.beginPath();
+    ctx.moveTo(a.x + Math.cos(back - 0.6) * r * 0.75, a.y - 4 + Math.sin(back - 0.6) * r * 0.75);
+    ctx.lineTo(a.x + Math.cos(back) * r * 1.75, a.y - 4 + Math.sin(back) * r * 1.75);
+    ctx.lineTo(a.x + Math.cos(back + 0.6) * r * 0.75, a.y - 4 + Math.sin(back + 0.6) * r * 0.75);
+    ctx.closePath();
+    ctx.fill();
+
+    // 身体
+    const g = ctx.createRadialGradient(a.x - 4, a.y - 9, 2, a.x, a.y - 4, r * 1.45);
+    g.addColorStop(0, '#f2f6ff');
+    g.addColorStop(0.5, a.color);
+    g.addColorStop(1, U.hexA(a.color, 0.28));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y - 4, r * 0.92, 0, 6.283);
+    ctx.fill();
+    ctx.strokeStyle = U.hexA(a.gcolor, 0.85);
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    // 朝向
+    ctx.strokeStyle = 'rgba(255,255,255,.8)';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(a.x + Math.cos(a.facing) * r * 0.6, a.y - 4 + Math.sin(a.facing) * r * 0.6);
+    ctx.lineTo(a.x + Math.cos(a.facing) * r * 1.2, a.y - 4 + Math.sin(a.facing) * r * 1.2);
+    ctx.stroke();
+
+    // 血条
+    const w = 40;
+    const hy = a.y - r - 22;
+    ctx.fillStyle = 'rgba(0,0,0,.6)';
+    ctx.fillRect(a.x - w / 2, hy, w, 4);
+    ctx.fillStyle = a.hostile ? '#ff6b6b' : '#8fd8a0';
+    ctx.fillRect(a.x - w / 2, hy, w * U.clamp(a.hp / a.maxHp, 0, 1), 4);
+
+    // 名字：公会 · 名字 Lv
+    ctx.font = '11px "Microsoft YaHei",sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = a.hostile ? '#ff9b9b' : U.hexA(a.gcolor, 0.95);
+    const tag = a.guildName ? `〈${a.guildName}〉` : '';
+    ctx.fillText(`${tag}${a.name}`, a.x, hy - 5);
+    ctx.font = '9px "Microsoft YaHei",sans-serif';
+    ctx.fillStyle = 'rgba(200,212,230,.62)';
+    ctx.fillText(`Lv.${a.lv} ${a.job}`, a.x, hy + 15);
+
+    // 气泡
+    if (a.bubble) {
+      const txt = a.bubble.text.length > 16 ? a.bubble.text.slice(0, 16) + '…' : a.bubble.text;
+      ctx.font = '11px "Microsoft YaHei",sans-serif';
+      const tw = ctx.measureText(txt).width + 14;
+      const bx = a.x - tw / 2, by = a.y - r - 62;
+      ctx.fillStyle = 'rgba(12,16,24,.92)';
+      ctx.strokeStyle = U.hexA(a.gcolor, 0.5);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(bx, by, tw, 20, 6);
+      else ctx.rect(bx, by, tw, 20);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#e6edf8';
+      ctx.textAlign = 'center';
+      ctx.fillText(txt, a.x, by + 14);
+    }
   }
 
   function drawEnemy(e) {

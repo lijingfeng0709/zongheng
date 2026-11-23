@@ -85,6 +85,9 @@ window.W = (function () {
       if (el) el.name = q.obj.name;
     }
 
+    // 该区域在线的 AI 玩家进场（他们各自有目的地）
+    if (window.AI && AI.onZoneEnter) AI.onZoneEnter(id);
+
     if (!silent) {
       UI.refreshHUD(true);
       UI.updateQuestHud();
@@ -221,14 +224,22 @@ window.W = (function () {
     if (G.bountyT <= 0) {
       G.bountyT = 45;
       if (G.bounties.length < 3) W.addBounty(true);
-      // AI 接走悬赏
+      // AI 玩家接走悬赏（有名字的人，而不是抽象势力）
       if (G.bounties.length > 0 && Math.random() < 0.55) {
-        const idx = Math.floor(Math.random() * G.bounties.length);
-        const b = G.bounties[idx];
-        const f = U.pick(G.factions);
-        G.bounties.splice(idx, 1);
-        U.log(`${f.name} 接走了悬赏「${b.text}」。`, 'hot');
-        changed = true;
+        if (window.AI && AI.st && AI.st()) {
+          const pool = AI.st().agents.filter(a => a.state !== 'offline');
+          if (pool.length) {
+            AI.claimBounty(U.pick(pool));
+            changed = true;
+          }
+        } else {
+          const idx = Math.floor(Math.random() * G.bounties.length);
+          const b = G.bounties[idx];
+          const f = U.pick(G.factions);
+          G.bounties.splice(idx, 1);
+          U.log(`${f.name} 接走了悬赏「${b.text}」。`, 'hot');
+          changed = true;
+        }
       }
     }
     if (changed && UI.currentPanel === 'quests') UI.open('quests');
@@ -497,6 +508,7 @@ window.W = (function () {
     G.flags['k_' + id] = (G.flags['k_' + id] || 0) + 1;
     if (e.rank === 'boss') G.flags['boss_' + id] = 1;
     if (e.eliteName) G.flags['elite_' + e.eliteName] = (G.flags['elite_' + e.eliteName] || 0) + 1;
+    if (window.AI && AI.onPlayerKill) AI.onPlayerKill(e);
     W.checkBountyKill(e);
     W.checkQuest();
     UI.updateQuestHud();

@@ -146,7 +146,7 @@ window.E = (function () {
 
   E.meleeSwing = function (attacker, aim, range, arc, mult) {
     const isPlayer = attacker.kind === 'player';
-    const list = isPlayer ? G.enemies : [G.player].concat(G.allies);
+    const list = isPlayer ? E.playerTargets() : [G.player].concat(G.allies);
     for (const t of list) {
       if (!t || t.dead || t.hp <= 0) continue;
       const d = U.dist(attacker.x, attacker.y, t.x, t.y);
@@ -154,11 +154,27 @@ window.E = (function () {
       if (Math.abs(U.angDiff(aim, U.ang(attacker.x, attacker.y, t.x, t.y))) > arc / 2) continue;
       if (isPlayer) {
         const weak = E.isWeakAim(t, aim, range, arc);
-        E.playerHit(t, mult, { weak });
+        E.hit(t, mult, { weak });
       } else {
         E.damagePlayer(attacker.atk * mult, attacker);
       }
     }
+  };
+
+  /* 玩家可攻击的目标：怪物 + 敌对 / 被挑衅的 AI 玩家 */
+  E.playerTargets = function () {
+    const list = G.enemies.slice();
+    for (const a of (G.aiEnts || [])) {
+      if (!a.dead && (a.hostile || a.provoked)) list.push(a);
+    }
+    return list;
+  };
+
+  /* 统一命中入口：怪物走 playerHit，AI 玩家走 playerHitAI */
+  E.hit = function (t, mult, opts) {
+    if (!t || t.dead) return;
+    if (t.kind === 'ai') E.playerHitAI(t, mult, opts);
+    else E.playerHit(t, mult, opts);
   };
 
   E.isWeakAim = function (t, aim, range, arc) {
@@ -212,6 +228,7 @@ window.E = (function () {
     dmg = Math.max(1, Math.round(dmg * U.rand(0.93, 1.07)));
 
     e.hp -= dmg;
+    e.playerDmg = (e.playerDmg || 0) + dmg;   // 用于「被 AI 抢怪」判定
     e.hitFlash = 0.14;
     e.aggro = true;
     e.target = 'player';
@@ -246,6 +263,58 @@ window.E = (function () {
     if (e.hp <= 0) E.killEnemy(e);
   };
 
+  /* ---------- 玩家命中 AI 玩家（PVP） ---------- */
+  E.playerHitAI = function (ent, mult, opts) {
+    const p = G.player, st = S.stats(p);
+    opts = opts || {};
+    if (!ent || ent.dead) return;
+    const weak = !!opts.weak;
+    const crit = Math.random() * 100 < st.crit;
+    let dmg = st.atk * mult * (1 - ent.def / (ent.def + 200));
+    if (crit) dmg *= 1.9;
+    if (weak) dmg *= 2.6;
+    dmg = Math.max(1, Math.round(dmg * U.rand(0.93, 1.07)));
+
+    ent.hp -= dmg;
+    ent.hitFlash = 0.14;
+    ent.provoked = true;      // 打了他，他就还手
+    ent.noHit = 0;
+    ent.target = 'player';
+    E.addText(ent.x + U.rand(-14, 14), ent.y - 26, (weak ? '要害 ' : '') + U.fmt(dmg),
+      weak ? '#ff9f43' : crit ? '#ffd166' : '#fff', weak ? 17 : 14);
+    E.burst(ent.x, ent.y, '#ffb0c0', 5, 140);
+    U.sfx(weak ? 'weak' : 'hit');
+    if (st.lifesteal > 0) p.hp = Math.min(st.maxHp, p.hp + dmg * st.lifesteal / 100);
+
+    if (ent.hp <= 0) {
+      if (window.AI && AI.onPlayerKillAI) AI.onPlayerKillAI(ent);
+      else ent.dead = true;
+    }
+  };
+
+  /* ---------- AI 玩家被野怪打 ---------- */
+  E.damageAI = function (ent, raw) {
+    if (!ent || ent.dead) return;
+    const dmg = Math.max(1, Math.round(raw * (1 - ent.def / (ent.def + 220)) * U.rand(0.92, 1.08)));
+    ent.hp -= dmg;
+    ent.noHit = 0;
+    ent.hitFlash = 0.12;
+    E.addText(ent.x + U.rand(-8, 8), ent.y - 26, '-' + U.fmt(dmg), '#ff8080', 12);
+    if (ent.hp <= 0) {
+      ent.dead = true;
+      const a = ent.agent;
+      a.deaths++;
+      a.state = 'offline';
+      if (window.AI) {
+        AI.pushLog(`${a.name} 在${G.zone.name}被野怪打死了，尸体旁边围了三个人。`, 'ai');
+        AI.remember(a, 'death', `在${G.zone.name}被野怪打死`, -0.6, 0.5);
+        setTimeout(() => { if (a.state === 'offline') a.state = 'active'; }, 45000);
+      }
+      E.burst(ent.x, ent.y, ent.color, 14, 200);
+      U.log(`${a.name} 被野怪打死了。`);
+    }
+  };
+
   /* ---------- 玩家受伤 ---------- */
   E.damagePlayer = function (raw, src) {
     const p = G.player;
@@ -267,15 +336,21 @@ window.E = (function () {
     E.burst(p.x, p.y, '#ff6b6b', 6, 160);
     E.shake(6, 0.16);
     U.sfx('hurt');
-    if (p.hp <= 0) E.playerDie();
+    if (p.hp <= 0) E.playerDie(src);
   };
 
-  E.playerDie = function () {
+  E.playerDie = function (src) {
     const p = G.player;
     if (p.dead) return;
     p.dead = true;
     G.statsData.deaths++;
     U.sfx('die');
+    if (src && src.kind === 'ai' && window.AI && AI.onPlayerDeath) {
+      try { AI.onPlayerDeath(src); } catch (e) {}
+      p.killedBy = src.name;
+    } else {
+      p.killedBy = '';
+    }
     const lost = Math.round(p.gold * 0.05);
     p.gold = Math.max(0, p.gold - lost);
     U.log(`你被击败了，遗落 ${lost} 金币。三秒后在落霞城醒来。`, 'bad');
@@ -283,9 +358,11 @@ window.E = (function () {
   };
 
   E.showDeathScreen = function (lost) {
+    const p = G.player;
+    const by = p.killedBy ? `被「${U.esc(p.killedBy)}」击杀` : '力 竭';
     const d = document.createElement('div');
     d.className = 'death-screen';
-    d.innerHTML = `<h2>力 竭</h2><p>遗落 ${lost} 金币 · 三秒后于落霞城重生</p>`;
+    d.innerHTML = `<h2>${p.killedBy ? by : '力 竭'}</h2><p>${p.killedBy ? '技不如人。' : ''}遗落 ${lost} 金币 · 三秒后于落霞城重生</p>`;
     document.getElementById('app').appendChild(d);
     setTimeout(() => {
       d.remove();
@@ -300,10 +377,19 @@ window.E = (function () {
   };
 
   /* ---------- 击杀 ---------- */
-  E.killEnemy = function (e) {
+  E.killEnemy = function (e, byAI) {
     if (e.dead) return;
     e.dead = true;
     e.hp = 0;
+
+    // 被 AI 玩家抢掉：世界在跟你抢饭吃
+    if (byAI) {
+      E.burst(e.x, e.y, e.tpl.color, 12, 220);
+      U.sfx('die');
+      if (window.AI && AI.onKillSteal) AI.onKillSteal(byAI, e);
+      return;
+    }
+
     const p = G.player;
     p.kills++;
     G.statsData.kills++;
@@ -400,24 +486,25 @@ window.E = (function () {
 
       if (!dead) {
         if (pr.from === 'player' || pr.from === 'ally') {
-          for (const e of G.enemies) {
+          for (const e of (pr.from === 'player' ? E.playerTargets() : G.enemies)) {
             if (e.dead || pr.hitSet.indexOf(e) >= 0) continue;
             const hitR = e.r + pr.r;
             const weak = pr.weak && U.dist(pr.x, pr.y, e.x + (e.weak.ox || 0), e.y + (e.weak.oy || 0)) < e.r * 0.62;
             if (U.dist(pr.x, pr.y, e.x, e.y) < hitR) {
               pr.hitSet.push(e);
-              if (pr.from === 'player') E.playerHit(e, pr.dmgMult, { weak });
+              if (pr.from === 'player') E.hit(e, pr.dmgMult, { weak });
               else E.allyHit(e, pr.dmgMult);
               dead = true;
               break;
             }
           }
         } else {
-          const targets = [G.player].concat(G.allies);
+          const targets = [G.player].concat(G.allies).concat(G.aiEnts || []);
           for (const t of targets) {
             if (!t || t.dead) continue;
             if (U.dist(pr.x, pr.y, t.x, t.y) < t.r + pr.r) {
               if (t.kind === 'player') E.damagePlayer(pr.src ? pr.src.atk * pr.dmgMult : 10, pr.src);
+              else if (t.kind === 'ai') E.damageAI(t, pr.src ? pr.src.atk * pr.dmgMult : 10);
               else E.damageAlly(t, pr.src ? pr.src.atk * pr.dmgMult : 10);
               dead = true;
               break;
@@ -429,9 +516,9 @@ window.E = (function () {
       if (dead) {
         if (pr.explode) {
           E.ring(pr.x, pr.y, pr.explode, pr.color, 0.35);
-          for (const e of G.enemies) {
+          for (const e of E.playerTargets()) {
             if (e.dead) continue;
-            if (U.dist(pr.x, pr.y, e.x, e.y) < pr.explode + e.r) E.playerHit(e, pr.dmgMult, { weak: false });
+            if (U.dist(pr.x, pr.y, e.x, e.y) < pr.explode + e.r) E.hit(e, pr.dmgMult, { weak: false });
           }
         }
         E.burst(pr.x, pr.y, pr.color, 5, 120);
@@ -480,6 +567,7 @@ window.E = (function () {
     const list = [];
     if (G.player && !G.player.dead) list.push(G.player);
     for (const a of G.allies) if (!a.dead) list.push(a);
+    for (const a of (G.aiEnts || [])) if (!a.dead) list.push(a);
     let best = null, bd = 1e9;
     for (const t of list) {
       const d = U.dist(e.x, e.y, t.x, t.y);
@@ -606,6 +694,7 @@ window.E = (function () {
     if (e.chargePending) { e.chargePending = false; return; }
     if (d <= e.range + target.r + 10) {
       if (target.kind === 'player') E.damagePlayer(e.atk, e);
+      else if (target.kind === 'ai') E.damageAI(target, e.atk);
       else E.damageAlly(target, e.atk);
     }
   };
@@ -847,12 +936,12 @@ window.E = (function () {
   /* 扇形伤害 */
   E.cone = function (p, aim, range, arc, mult, opts) {
     opts = opts || {};
-    for (const e of G.enemies) {
+    for (const e of E.playerTargets()) {
       if (e.dead) continue;
       const d = U.dist(p.x, p.y, e.x, e.y);
       if (d > range + e.r) continue;
       if (Math.abs(U.angDiff(aim, U.ang(p.x, p.y, e.x, e.y))) > arc / 2) continue;
-      E.playerHit(e, mult, { weak: E.isWeakAim(e, aim, range, arc) });
+      E.hit(e, mult, { weak: E.isWeakAim(e, aim, range, arc) });
       if (opts.stun) e.stun = Math.max(e.stun, opts.stun);
       if (opts.burn) e.burn = { t: 5, dmg: S.stats(p).atk * 0.18 };
       if (opts.knock) {
@@ -865,14 +954,14 @@ window.E = (function () {
   /* 走廊伤害 */
   E.corridor = function (p, aim, len, width, mult, opts) {
     opts = opts || {};
-    for (const e of G.enemies) {
+    for (const e of E.playerTargets()) {
       if (e.dead) continue;
       const relX = e.x - p.x, relY = e.y - p.y;
       const along = relX * Math.cos(aim) + relY * Math.sin(aim);
       const perp = Math.abs(-relX * Math.sin(aim) + relY * Math.cos(aim));
       if (along < -10 || along > len + e.r) continue;
       if (perp > width / 2 + e.r) continue;
-      E.playerHit(e, mult, { weak: false });
+      E.hit(e, mult, { weak: false });
       if (opts.knock) {
         e.x += Math.cos(aim) * opts.knock;
         e.y += Math.sin(aim) * opts.knock;

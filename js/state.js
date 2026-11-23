@@ -3,7 +3,8 @@ window.G = {
   t: 0, running: false, paused: false, dead: false,
   player: null, zoneId: 'town', zone: null,
   enemies: [], allies: [], projs: [], fx: [], texts: [], loots: [],
-  npcs: [], props: [], points: [],
+  npcs: [], props: [], points: [], aiEnts: [],
+  ai: null, chatOpen: false,
   factions: [], bounties: [], mainIdx: 0,
   log: [], cam: { x: 0, y: 0 }, shake: 0, shakeT: 0,
   spawnT: 0, factionT: 0, bountyT: 0, saveT: 0, capT: 0,
@@ -86,6 +87,9 @@ window.S = (function () {
     G.statsData = { kills: 0, deaths: 0, weak: 0, execute: 0, gold: 0 };
     G.flags = {};
     G.t = 0;
+
+    // 世界先于人：1200 个「别的玩家」先上线，再把你放进去
+    if (window.AI) AI.init(0, false);
 
     setTimeout(() => {
       for (let i = 0; i < 3; i++) W.addBounty(true);
@@ -259,6 +263,7 @@ window.S = (function () {
       flags: G.flags,
       statsData: G.statsData,
       log: G.log.slice(0, 12),
+      ai: window.AI ? AI.serialize() : null,
       t: G.t,
     };
   };
@@ -359,8 +364,24 @@ window.S = (function () {
     G.statsData = d.statsData || { kills: 0, deaths: 0, weak: 0, execute: 0, gold: 0 };
     G.log = d.log || [];
     G.t = d.t || 0;
+
+    // 世界状态：AI 生态 + 离线补算（上限 72 小时）
+    let away = '';
+    if (window.AI) {
+      if (d.ai) AI.apply(d.ai);
+      else AI.init(0, false);
+      if (d.ts) {
+        try { away = AI.offlineCatchup((Date.now() - d.ts) / 3600000) || ''; } catch (e) {}
+      }
+    }
+
     W.loadZone(G.zoneId, true);
     UI.refreshHUD(true);
+    if (away) {
+      G.ai.awaySummary = away;
+      setTimeout(() => U.toast(away, 'good'), 900);
+      setTimeout(() => U.log(away + '。', 'hot'), 1600);
+    }
     return true;
   };
 

@@ -2,6 +2,7 @@
 window.UI = (function () {
   const UI = { currentPanel: null, selBag: null, smithSel: null, smithTab: 'enh', shopTab: 'buy',
     bagPage: 1, bagFilter: false, _lastBag: null, _lastBagT: 0,
+    worldTab: 'chat', _lastChat: 0,
     cloudMsg: '', cloudRemote: null, cloudFetching: false, slotRemote: null };
 
   const $ = id => document.getElementById(id);
@@ -28,6 +29,14 @@ window.UI = (function () {
     $('hudZone').textContent = G.zone ? G.zone.name : '';
     $('hudAvatar').textContent = D.CLASSES[p.cls].icon;
     $('hudAvatar').style.background = `radial-gradient(circle at 35% 30%, #fff, ${D.CLASSES[p.cls].color} 60%, #1a2230)`;
+
+    // 在线人数：让「服务器很大」这件事一直在眼前
+    const onEl = $('hudOnline');
+    if (onEl && window.AI && AI.populationView) {
+      const pop = AI.populationView();
+      onEl.querySelector('b').textContent = pop.online;
+      onEl.title = `全服 ${pop.total} 名玩家，当前在线 ${pop.online}`;
+    }
 
     const stEl = $('stanceHud');
     const sd = D.STANCES[p.stance];
@@ -107,6 +116,26 @@ window.UI = (function () {
 
   UI.updateQuestHud = function () { UI.refreshHUD(); };
 
+  /* ================= 聊天 HUD ================= */
+  UI.chatPush = function (msg) {
+    const box = $('chatHud');
+    if (!box || !msg) return;
+    const d = document.createElement('div');
+    d.className = 'chat-line ' + (msg.ch || 'world');
+    const label = { world: '世界', region: '区域', private: '私聊', system: '系统' }[msg.ch] || '世界';
+    d.innerHTML = `<span class="ch">${label}</span>` +
+      (msg.ch === 'system' ? '' : `<b style="color:${msg.color || '#cfd8e6'}">${U.esc(msg.name || '')}</b>`) +
+      `<span>${U.esc(msg.text || '')}</span>`;
+    box.appendChild(d);
+    while (box.children.length > 5) box.removeChild(box.firstChild);
+    setTimeout(() => {
+      if (!d.parentNode) return;
+      d.style.transition = 'opacity .6s';
+      d.style.opacity = '0';
+      setTimeout(() => d.remove(), 650);
+    }, 14000);
+  };
+
   /* ================= 提示框 ================= */
   let tipEl = null;
   function ensureTip() { if (!tipEl) tipEl = $('tip'); return tipEl; }
@@ -150,10 +179,10 @@ window.UI = (function () {
     const fn = {
       char: panelChar, bag: panelBag, skills: panelSkills, quests: panelQuests,
       faction: panelFaction, map: panelMap, shop: panelShop, smith: panelSmith, trainer: panelTrainer,
-      help: panelHelp, cloud: panelCloud,
+      help: panelHelp, cloud: panelCloud, world: panelWorld, ranks: panelRanks,
     }[name];
     if (!fn) { UI.close(); return; }
-    panel.className = 'panel' + (name === 'bag' || name === 'cloud' ? ' wide' : '');
+    panel.className = 'panel' + (name === 'bag' || name === 'cloud' || name === 'world' || name === 'ranks' ? ' wide' : '');
     panel.innerHTML = fn();
     bindPanel(name);
     UI.refreshHUD();
@@ -551,6 +580,186 @@ window.UI = (function () {
     </div>`;
   }
 
+  /* ================= 江湖（AI 玩家生态） ================= */
+  function aiAgent(id) {
+    const s = window.AI && AI.st ? AI.st() : null;
+    return s ? s.agents.find(a => a.id === id) : null;
+  }
+  function attCol(v) { return v > 30 ? '#5fd18d' : v < -20 ? '#ff6b6b' : '#a9b3c5'; }
+  function attWord(v) {
+    if (v >= 70) return '挚友';
+    if (v >= 40) return '友好';
+    if (v > -20) return '中立';
+    if (v > -60) return '敌视';
+    return '死敌';
+  }
+  function ago(sec) {
+    const d = Math.max(0, sec);
+    if (d < 60) return Math.max(1, Math.round(d)) + ' 秒前';
+    if (d < 3600) return Math.round(d / 60) + ' 分钟前';
+    return (d / 3600).toFixed(1) + ' 小时前';
+  }
+  const CH_NAME = { world: '世界', region: '区域', private: '私聊', system: '系统' };
+
+  function wChat() {
+    const s = AI.st();
+    const rows = s.chat.slice(0, 80).map(m => `
+      <div class="chat-row ${m.ch || 'world'}">
+        <span class="cch">${CH_NAME[m.ch] || '世界'}</span>
+        ${m.ch === 'system' ? '' : `<b style="color:${m.color || '#cfd8e6'}">${U.esc(m.name || '')}</b>`}
+        <span class="ctx">${U.esc(m.text || '')}</span>
+      </div>`).join('');
+    return `<div class="chat-panel">${rows || '<div class="chat-empty">频道里暂时没人说话。</div>'}</div>
+      <div class="chat-send">
+        <input id="chatInput" maxlength="40" placeholder="在世界频道说点什么…（回车发送）" />
+        <button class="btn sm" data-say>发 送</button>
+      </div>
+      <div class="ct-note">
+        世界频道也有频率限制——AI 被限流，你也被限流。你开口时，和你关系最好的人多半会搭话。
+      </div>`;
+  }
+
+  function wLog() {
+    const s = AI.st();
+    if (!s.worldlog.length) return `<div class="card"><div class="cd">世界日志还是空的。</div></div>`;
+    const rows = s.worldlog.slice(0, 90).map(l => `
+      <div class="wl-row ${l.kind}">
+        <span class="wt">${ago(s.t - l.t)}</span>
+        <span class="wx">${U.esc(l.text)}</span>
+      </div>`).join('');
+    return `<div class="wl-panel">${rows}</div>
+      <div class="ct-note">这里记录的是「你没看见的时候，世界发生了什么」。离线期间的事件也会补算进来。</div>`;
+  }
+
+  function wRank() {
+    const list = AI.leaderboard(20);
+    const rows = list.map(r => `
+      <div class="rank-row ${r.isPlayer ? 'me' : ''}">
+        <span class="rk">${r.rank}</span>
+        <span class="rn" style="color:${r.isPlayer ? '#f0d49a' : r.gcolor}">${U.esc(r.name)}${r.isPlayer ? '（你）' : ''}</span>
+        <span class="rl">Lv.${r.lv}</span>
+        <span class="rj">${U.esc(r.job)}</span>
+        <span class="rg">${U.esc(r.guild)}</span>
+      </div>`).join('');
+    const rank = AI.playerRank();
+    return `<div class="rank-head">
+        <div>天榜（等级）</div>
+        <div class="rh-me">你的名次：<b>第 ${rank} 位</b></div>
+      </div>
+      <div class="rank-row head"><span class="rk">#</span><span class="rn">玩家</span><span class="rl">等级</span><span class="rj">职业</span><span class="rg">公会</span></div>
+      ${rows}
+      <div class="ct-note">榜单是实时的：AI 也会练级、也会掉榜。前 20 名里至少 12 席是 AI——你要挤进去，就得真的比他们能打。</div>`;
+  }
+
+  function wRel() {
+    const p = G.player;
+    const fr = AI.friends(), en = AI.enemies();
+    const card = (a, hostile) => {
+      const g = AID.guild(a.guild);
+      const mem = a.mem && a.mem[0] ? a.mem[0].note : (hostile ? '还没打过照面' : '还没一起做过事');
+      return `<div class="rel-card">
+        <div class="rc-top">
+          <b style="color:${g.color}">${U.esc(a.name)}</b>
+          <span class="rc-job">${a.job} Lv.${a.lv} · ${g.name}</span>
+          <span class="rc-att" style="color:${attCol(a.att)}">${attWord(a.att)} ${Math.round(a.att)}</span>
+        </div>
+        <div class="rc-mem">${U.esc(mem)}</div>
+        <div class="rc-btns">
+          <button class="btn sm ghost" data-gift-ai="${a.id}" ${p.gold < 200 ? 'disabled' : ''}>送礼 200金</button>
+          <button class="btn sm ghost" data-track="${a.id}">他在哪</button>
+        </div>
+      </div>`;
+    };
+    return `<div class="p-cols">
+      <div><div class="stat-block"><h3>朋 友（${fr.length}）</h3><div class="list">
+        ${fr.length ? fr.map(a => card(a, false)).join('') : '<div class="rel-empty">还没有人把你当朋友。一起打怪、送点东西，态度会涨。</div>'}
+      </div></div></div>
+      <div><div class="stat-block"><h3>仇 敌（${en.length}）</h3><div class="list">
+        ${en.length ? en.map(a => card(a, true)).join('') : '<div class="rel-empty">暂时没人和你结仇。抢怪、抢首领、杀他们的人，都会记在账上。</div>'}
+      </div></div></div>
+    </div>
+    <div class="ct-note">关系是有向的：你记得他，他也记得你。态度低于 -60 且性格够冲的人，会在野外主动来杀你。</div>`;
+  }
+
+  function wRumor() {
+    const s = AI.st();
+    if (!s.rumors.length) {
+      return `<div class="card"><div class="cd">江湖传闻每过一阵出一期，内容来自世界日志里的高光事件。</div></div>`;
+    }
+    return s.rumors.map(r => `
+      <div class="rumor">
+        <div class="rm-t">【江湖传闻 · 第 ${r.no} 期】</div>
+        ${r.lines.map(l => `<div class="rm-l">· ${U.esc(l)}</div>`).join('')}
+        <div class="rm-f">${ago(s.t - r.t)}发布</div>
+      </div>`).join('');
+  }
+
+  function wEco() {
+    const s = AI.st();
+    const pop = AI.populationView();
+    const top = AI.top(6);
+    const t = Math.round(s.tension);
+    const tone = t > 62 ? '#ff6b6b' : t > 36 ? '#f0c24b' : '#5fd18d';
+    const stateName = { active: '活跃', idle: '挂机', busy: '忙碌', dc: '掉线', offline: '离线' };
+    const rows = top.map(a => {
+      const d = a.lastDecision;
+      return `<div class="eco-row">
+        <b style="color:${AID.guild(a.guild).color}">${U.esc(a.name)}</b>
+        <span class="eo-lv">Lv.${a.lv}</span>
+        <span class="eo-doing">${stateName[a.state] || a.state} · ${a.doing ? a.doing.type : '—'}</span>
+        <span class="eo-dec">${d ? `${d.act}（${d.u}）` : '—'}</span>
+      </div>`;
+    }).join('');
+    return `<div class="eco-grid">
+        <div class="eco-box"><div class="eb-k">世界张力</div>
+          <div class="eb-v" style="color:${tone}">${t}</div>
+          <div class="meter"><i style="width:${t}%;background:${tone}"></i></div>
+          <div class="eb-s">${t > 62 ? '随时会打起来' : t > 36 ? '有人开始不安分' : '太平得有点无聊'}</div>
+        </div>
+        <div class="eco-box"><div class="eb-k">在线人数</div>
+          <div class="eb-v">${pop.online}</div>
+          <div class="eb-s">全服 ${pop.total} 人 · 本地模拟 ${pop.local} 个 Agent</div>
+        </div>
+        <div class="eco-box"><div class="eb-k">最近统计</div>
+          <div class="eb-s" style="line-height:2">
+            发言 ${s.stat.chats} 条 · 抢怪/抢单 ${s.stat.steals} 次<br>
+            PK ${s.stat.pks || 0} 场 · AI 死亡 ${s.stat.deaths} 次<br>
+            全服升级 ${s.stat.levels} 次
+          </div>
+        </div>
+      </div>
+      <div class="stat-block" style="margin-top:16px"><h3>核 心 玩 家 · 决 策 明 细</h3>
+        <div class="eco-table">${rows}</div>
+        <div class="ct-note">
+          右列是效用函数的最高分行为：需求值 × 性格权重 − 成本 − 重复惩罚 + 机会 + 噪声。
+          他们不是任务机器，是在算「现在做什么最划算」。
+        </div>
+      </div>`;
+  }
+
+  function panelWorld() {
+    if (!window.AI || !AI.st() || !AI.st()) {
+      return head('江 湖', '世界尚未启动') +
+        `<div class="p-body"><div class="card"><div class="cd">AI 玩家生态未初始化，请重新进入游戏。</div></div></div>`;
+    }
+    const s = AI.st();
+    const pop = AI.populationView();
+    const tab = UI.worldTab || 'chat';
+    const T = (k, label) => `<button data-wtab="${k}" class="${tab === k ? 'on' : ''}">${label}</button>`;
+    const tabs = `<div class="tabs">
+      ${T('chat', '频道')}${T('log', '世界日志')}${T('rank', '天榜')}
+      ${T('rel', '关系')}${T('rumor', '江湖传闻')}${T('eco', '生态')}
+    </div>`;
+    const fn = { chat: wChat, log: wLog, rank: wRank, rel: wRel, rumor: wRumor, eco: wEco }[tab] || wChat;
+    return head('江 湖', `${pop.online} 人在线 · 全服 ${pop.total} 人 · 你是第 ${s.entryNo} 位进服的人`) +
+      `<div class="p-body">${tabs}${fn()}</div>`;
+  }
+
+  function panelRanks() {
+    UI.worldTab = 'rank';
+    return panelWorld();
+  }
+
   /* ================= 地图 ================= */
   function panelMap() {
     const p = G.player;
@@ -725,7 +934,9 @@ window.UI = (function () {
       ['W A S D', '移动'], ['鼠标左键', '普通攻击（按住连续攻击）'], ['鼠标指向', '瞄准要害 / 选择目标'],
       ['空格', '翻滚闪避（短暂无敌）'], ['1 2 3', '释放三个职业战技'], ['R', '使用金疮药'],
       ['Q', '切换姿态（进攻 / 坚守 / 游击）'], ['E', '与 NPC 对话、使用界门、占领资源点'],
-      ['C I K J F M U', '角色 / 背包 / 技能 / 任务 / 势力 / 地图 / 云存档'], ['Esc', '关闭面板'],
+      ['C I K J', '角色 / 背包 / 技能 / 任务'], ['T', '江湖（频道 / 日志 / 天榜 / 关系 / 传闻）'],
+      ['P', '天榜'], ['F1', 'AI 生态调试（决策明细）'],
+      ['F M U', '势力 / 地图 / 云存档'], ['Esc', '关闭面板'],
     ].map(r => `<div class="stat-row"><span style="color:#8b95a8">${r[1]}</span><b style="font-family:monospace;font-size:11px">${r[0]}</b></div>`).join('');
 
     return head('操 作 与 机 制', '纵横 · 单机版') + `<div class="p-body">
@@ -752,6 +963,13 @@ window.UI = (function () {
             <div style="font-size:11.5px;color:#8b95a8;line-height:1.9">
               AI 势力会自行扩张、争夺资源点、接走悬赏。与他们示好到 10 点好感即可加入。<br>
               占领野外资源点会得罪原属势力，但能拿到金币、声望与装备。
+            </div>
+          </div>
+          <div class="stat-block"><h3>AI 玩 家</h3>
+            <div style="font-size:11.5px;color:#8b95a8;line-height:1.9">
+              全服 1200 人，每一个都有自己的作息、脾气和账本。他们会练级、抢你的怪、抢你的悬赏、在频道里骂人，也会记住你杀过他。<br>
+              头顶带〈公会〉名字的人就是 AI。红圈的是要来杀你的。<br>
+              他们同样会死——被野怪打死、被你打死，都会掉级、会记仇。
             </div>
           </div>
           <div class="stat-block"><h3>成 长</h3>
@@ -1091,6 +1309,39 @@ window.UI = (function () {
       panel.querySelectorAll('[data-recruit]').forEach(el => el.addEventListener('click', () => W.recruit(el.dataset.recruit)));
       const lv = panel.querySelector('[data-leave]');
       if (lv) lv.addEventListener('click', () => W.leaveFaction());
+    }
+
+    if (name === 'world' || name === 'ranks') {
+      panel.querySelectorAll('[data-wtab]').forEach(el => el.addEventListener('click', () => {
+        UI.worldTab = el.dataset.wtab;
+        UI.open('world');
+      }));
+      const inp = $('chatInput');
+      const doSay = () => {
+        if (!inp) return;
+        const v = (inp.value || '').trim();
+        if (!v) return;
+        inp.value = '';
+        if (window.AI && AI.onPlayerMessage) AI.onPlayerMessage(v.slice(0, 40));
+        if (UI.currentPanel === 'world' && UI.worldTab === 'chat') UI.open('world');
+      };
+      const send = panel.querySelector('[data-say]');
+      if (send) send.addEventListener('click', doSay);
+      if (inp) {
+        inp.addEventListener('keydown', e => {
+          if (e.key === 'Enter') { e.preventDefault(); doSay(); }
+        });
+        setTimeout(() => inp.focus(), 40);
+      }
+      panel.querySelectorAll('[data-gift-ai]').forEach(el => el.addEventListener('click', () => {
+        const a = aiAgent(el.dataset.giftAi);
+        if (!a) return;
+        if (AI.onPlayerGift(a, 200)) UI.open('world');
+      }));
+      panel.querySelectorAll('[data-track]').forEach(el => el.addEventListener('click', () => {
+        const a = aiAgent(el.dataset.track);
+        if (a) U.toast(`${a.name} 最近在 ${AI.zoneName(a.zone)} 出没`, 'good');
+      }));
     }
 
     if (name === 'map') {

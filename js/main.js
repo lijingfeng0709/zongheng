@@ -291,6 +291,16 @@
     fadeOutStart();
     UI.buildSkillbar();
     UI.refreshHUD(true);
+
+    // 把已经发生过的频道发言铺回 HUD
+    if (window.AI && AI.st && AI.st()) {
+      const s = AI.st();
+      s.chat.slice().reverse().forEach(m => UI.chatPush(m));
+      const pop = AI.populationView();
+      U.log(`全服 ${pop.total} 名玩家，此刻在线 ${pop.online} 人。`, 'hot');
+      if (s.awaySummary) setTimeout(() => U.log(s.awaySummary + '。', 'good'), 2200);
+    }
+
     G.running = true;
     U.log(`你进入了《灵恸》。这里是落霞城，安全区。（卡槽 ${CN_NO[S.slot - 1]}）`, 'hot');
     setTimeout(() => {
@@ -317,8 +327,16 @@
       }
       if (!G.running) return;
 
+      // F1：AI 生态调试面板
+      if (e.key === 'F1') {
+        e.preventDefault();
+        UI.worldTab = 'eco';
+        UI.open('world');
+        return;
+      }
+
       // 面板快捷键
-      const map = { c: 'char', i: 'bag', k: 'skills', j: 'quests', f: 'faction', m: 'map', h: 'help', u: 'cloud' };
+      const map = { c: 'char', i: 'bag', k: 'skills', j: 'quests', f: 'faction', m: 'map', h: 'help', u: 'cloud', t: 'world', p: 'ranks' };
       if (map[k] && !e.repeat) {
         e.preventDefault();
         UI.toggle(map[k]);
@@ -403,6 +421,7 @@
     W.bountyTick(dt);
     W.updateCapture(dt);
     W.updateNear();
+    if (window.AI) AI.tick(dt);
 
     G.saveT += dt;
     if (G.saveT > 25) { G.saveT = 0; S.save(); }
