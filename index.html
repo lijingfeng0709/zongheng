@@ -26,6 +26,7 @@
     </div>
 
     <div class="hud-right">
+      <div class="res online" id="hudOnline"><em>●</em><b>0</b></div>
       <div class="res gold"><em>◈</em><b id="hudGold">0</b></div>
       <div class="res rep"><em>✦</em><b id="hudRep">0</b></div>
       <div class="res zone" id="hudZone">落霞城</div>
@@ -33,6 +34,7 @@
 
     <div class="quest-hud" id="questHud"></div>
     <div class="log-hud" id="logHud"></div>
+    <div class="chat-hud" id="chatHud"></div>
 
     <div class="bottom-bar">
       <div class="stance-box" id="stanceHud">
@@ -46,6 +48,8 @@
       <button data-panel="bag">背包<kbd>I</kbd></button>
       <button data-panel="skills">技能<kbd>K</kbd></button>
       <button data-panel="quests">任务<kbd>J</kbd></button>
+      <button data-panel="world">江湖<kbd>T</kbd></button>
+      <button data-panel="ranks">榜单<kbd>P</kbd></button>
       <button data-panel="faction">势力<kbd>F</kbd></button>
       <button data-panel="map">地图<kbd>M</kbd></button>
       <button data-panel="help">帮助<kbd>H</kbd></button>
@@ -139,6 +143,8 @@
         <span><kbd>R</kbd> 药水</span>
         <span><kbd>Q</kbd> 切换姿态</span>
         <span><kbd>E</kbd> 交互</span>
+        <span><kbd>T</kbd> 江湖（世界频道）</span>
+        <span><kbd>P</kbd> 天榜</span>
       </div>
     </div>
   </div>
@@ -147,6 +153,8 @@
 <script src="js/config.js"></script>
 <script src="js/util.js"></script>
 <script src="js/data.js"></script>
+<script src="js/ai_data.js"></script>
+<script src="js/ai.js"></script>
 <script src="js/state.js"></script>
 <script src="js/cloud.js"></script>
 <script src="js/account.js"></script>
