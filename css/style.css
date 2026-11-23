@@ -73,7 +73,7 @@ kbd{
 .res em{font-style:normal;font-size:13px;}
 .res.gold em{color:#f0c24b;}
 .res.rep em{color:#9fd3ff;}
-.res.zone{color:#c7d0e0;border-color:rgba(201,163,92,.25);}
+.res.zone{color:#c7d0e0;border-color:rgba(201,163,92,.25);max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 .quest-hud{position:absolute;left:20px;top:136px;width:238px;
   padding:10px 13px;border-radius:10px;background:rgba(10,13,19,.72);
@@ -546,3 +546,91 @@ kbd{
 
 @media (max-width:1180px){ .chat-hud{display:none;} }
 @media (max-width:900px){ .eco-grid{grid-template-columns:1fr;} .rank-row{grid-template-columns:34px 1fr 54px 62px;} .rank-row .rg{display:none;} }
+
+/* ============ 世界地图 ============ */
+.map-wrap{margin-bottom:10px;border-radius:10px;border:1px solid rgba(255,255,255,.07);
+  background:radial-gradient(120% 120% at 50% 0%,rgba(32,40,56,.9),rgba(10,13,19,.95));
+  padding:6px;overflow:hidden}
+.map-wrap svg{width:100%;height:auto;display:block}
+.map-node text{font-family:"Microsoft YaHei",sans-serif;letter-spacing:.5px;pointer-events:none}
+.map-node.cur text{font-weight:600}
+.map-node[data-travel]:hover circle,.map-node[data-travel]:hover rect{filter:brightness(1.35)}
+.map-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:10.5px;color:#7b8699;margin:2px 0 12px}
+.map-legend i{display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:-1px;border-radius:50%}
+.map-legend i.dot{background:#c9a35c}
+.map-legend i.dia{background:#b06bff;border-radius:1px;transform:rotate(45deg)}
+.map-legend i.ring{border:1px dashed #c9a35c;background:transparent}
+.map-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.map-card{padding:9px 11px;border-radius:8px;background:rgba(255,255,255,.026);
+  border:1px solid rgba(255,255,255,.06);font-size:11px;line-height:1.6}
+.map-card:not(.lock):not(.here){cursor:pointer}
+.map-card:not(.lock):not(.here):hover{background:rgba(201,163,92,.07);border-color:rgba(201,163,92,.28)}
+.map-card.here{border-color:rgba(201,163,92,.45);background:rgba(201,163,92,.08)}
+.map-card.lock{opacity:.52}
+.mc-top{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+.mc-top b{font-size:12.5px}
+.mc-lv{font-size:10px;color:#7b8699;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.mc-state{font-size:10px;flex:0 0 auto}
+.mc-line{color:#8b95a8;font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc-line em{font-style:normal;color:#5d6878;margin-right:6px}
+.mc-tags{margin-top:5px;display:flex;gap:5px;flex-wrap:wrap}
+.mc-tag{font-size:9.5px;padding:1px 6px;border-radius:3px;border:1px solid rgba(255,255,255,.12);color:#9aa6ba}
+.mc-tag.haz{color:#ffab4a;border-color:rgba(255,171,74,.35)}
+.mc-tag.boss{color:#ff8b8b;border-color:rgba(255,110,110,.35)}
+.mc-tag.dun{color:#b06bff;border-color:rgba(176,107,255,.4)}
+@media (max-width:900px){ .map-grid{grid-template-columns:1fr} }
+
+/* ================= PVP：恶名 / 决斗 / 右键菜单 ================= */
+.res.evil{border-color:rgba(255,120,120,.3);}
+.res.evil em{color:#ff8080;}
+.res.evil.red{background:rgba(64,14,14,.92);border-color:rgba(255,90,90,.55);
+  animation:evilPulse 2s infinite;}
+@keyframes evilPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,80,80,.0)}50%{box-shadow:0 0 16px 1px rgba(255,80,80,.28)}}
+.res.pk{display:none;border-color:rgba(255,90,90,.5);background:rgba(64,14,14,.9);color:#ffd0d0;}
+.res.pk em{color:#ff6b6b;}
+.res.pk.on{display:flex;animation:pkBlink 1.4s infinite;}
+.res.pk.hold{display:flex;opacity:.55;}
+@keyframes pkBlink{0%,100%{box-shadow:0 0 0 0 rgba(255,80,80,0)}50%{box-shadow:0 0 14px 0 rgba(255,80,80,.45)}}
+
+.duel-bar{position:absolute;left:50%;top:14px;transform:translateX(-50%);
+  display:flex;align-items:center;gap:12px;padding:8px 14px;border-radius:12px;
+  background:rgba(10,13,19,.9);border:1px solid rgba(255,120,120,.35);
+  box-shadow:0 8px 30px rgba(0,0,0,.55);font-size:11.5px;backdrop-filter:blur(8px);z-index:6;}
+.duel-bar .db-tag{color:#ff8b8b;letter-spacing:3px;font-size:11px;}
+.duel-bar .db-side{display:flex;align-items:center;gap:7px;}
+.duel-bar .db-side.r{flex-direction:row;}
+.duel-bar .db-name{color:#dbe3ef;font-weight:600;max-width:132px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.duel-bar .db-hp{width:168px;height:9px;border-radius:5px;background:rgba(255,255,255,.1);
+  overflow:hidden;border:1px solid rgba(255,255,255,.08);}
+.duel-bar .db-hp i{display:block;height:100%;width:100%;transition:width .12s linear;
+  background:linear-gradient(90deg,#d1453a,#ff7a6b);}
+.duel-bar .db-side.r .db-hp i{background:linear-gradient(90deg,#8e6b1f,#ffcf6b);}
+.duel-bar .db-mid{min-width:30px;text-align:center;color:#f0d49a;font-size:16px;font-weight:700;}
+.duel-bar .db-mid.count{color:#ff6b6b;animation:pkBlink 1s infinite;}
+
+.ai-menu{position:fixed;z-index:70;width:248px;padding:10px 12px 9px;border-radius:10px;
+  background:rgba(12,16,23,.97);border:1px solid rgba(201,163,92,.3);
+  box-shadow:0 14px 44px rgba(0,0,0,.7);font-size:11.5px;color:#c9d3e2;}
+.ai-menu .am-top{display:flex;flex-direction:column;gap:2px;padding-bottom:7px;
+  border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:7px;}
+.ai-menu .am-top b{font-size:13px;}
+.ai-menu .am-top span{font-size:10px;color:#7b8699;}
+.ai-menu .am-row{display:flex;justify-content:space-between;font-size:11px;
+  color:#8b95a8;line-height:1.9;}
+.ai-menu .am-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;}
+.ai-menu .am-btns button{font:inherit;font-size:11px;padding:7px 4px;white-space:nowrap;border-radius:6px;cursor:pointer;
+  color:#dbe3ef;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.1);
+  transition:background .15s,border-color .15s;}
+.ai-menu .am-btns button:hover{background:rgba(201,163,92,.16);border-color:rgba(201,163,92,.45);}
+.ai-menu .am-btns button.am-main{grid-column:1 / -1;color:#ffe0c0;
+  background:rgba(140,40,30,.4);border-color:rgba(255,120,90,.4);}
+.ai-menu .am-btns button.am-main:hover{background:rgba(180,50,36,.55);}
+.ai-menu .am-tip{margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,.06);
+  font-size:10px;color:#6f7a8c;line-height:1.7;}
+@keyframes popIn{from{opacity:0;transform:translateY(-4px) scale(.97)}to{opacity:1;transform:none}}
+
+.rank-row{grid-template-columns:44px 1fr 66px 78px 96px 62px;}
+.rank-row .rx{text-align:right;}
+.rank-row .rx .btn{padding:2px 8px;font-size:10px;}
+@media (max-width:900px){ .rank-row{grid-template-columns:34px 1fr 54px 62px 56px;} .rank-row .rg{display:none;} }
