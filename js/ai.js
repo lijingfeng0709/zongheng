@@ -25,11 +25,13 @@ window.AI = (function () {
 
   /* 等级 → 该去哪个区域练级 */
   function zoneForLevel(lv) {
-    if (lv < 6) return 'forest';
-    if (lv < 13) return 'swamp';
-    if (lv < 19) return 'rift';
-    if (lv < 24) return 'lavaRift';
-    return chance(0.5) ? 'lavaRift' : 'rift';
+    if (lv < 13) return 'forest';
+    if (lv < 20) return 'swamp';
+    if (lv < 30) return 'rift';
+    if (lv < 40) return 'glacier';
+    if (lv < 50) return chance(0.65) ? 'sanctum' : 'glacier';
+    if (lv < 55) return chance(0.6) ? 'sanctum' : 'capital';
+    return chance(0.5) ? 'capital' : 'sanctum';
   }
 
   /* 真实时钟 → 在线比例（19–24 点峰值 380，凌晨 3 点谷底 40） */
@@ -631,7 +633,7 @@ window.AI = (function () {
     const text = tpl
       .replace(/\{g1\}/g, g1.name).replace(/\{g2\}/g, g2.name)
       .replace(/\{guild\}/g, g1.name)
-      .replace(/\{zone\}/g, zoneName(pick(['forest', 'swamp', 'rift', 'lavaRift'])))
+      .replace(/\{zone\}/g, zoneName(pick(['forest', 'swamp', 'rift', 'glacier', 'sanctum'])))
       .replace(/\{who2\}/g, who2.name).replace(/\{who\}/g, who.name)
       .replace(/\{mob\}/g, pick(['剑狼王', '裂谷之主', '黑石矿主', '幽魂古刹主']))
       .replace(/\{q\}/g, pick(AID.QUAL))
@@ -856,7 +858,7 @@ window.AI = (function () {
     if (s.deathBy[a.id] === 3) {
       // 反挫败熔断：连续 3 次被同一人杀 → 他去别处 30 分钟，并给你线索
       a.hostT = 1800;
-      a.zone = pick(['forest', 'swamp', 'rift']);
+      a.zone = pick(['forest', 'swamp', 'rift', 'glacier', 'sanctum']);
       U.toast(`有人告诉你：${a.name} 去 ${zoneName(a.zone)} 了`, 'good');
       AI.pushLog(`${a.name} 好像暂时离开这片区域了。`, 'system');
       s.deathBy[a.id] = 0;

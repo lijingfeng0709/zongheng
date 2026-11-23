@@ -4,6 +4,7 @@ window.G = {
   player: null, zoneId: 'town', zone: null,
   enemies: [], allies: [], projs: [], fx: [], texts: [], loots: [],
   npcs: [], props: [], points: [], aiEnts: [],
+  landmarks: [], hazard: null, runes: [], bossDown: {}, bossCd: {}, zoneT: 0,
   ai: null, chatOpen: false,
   factions: [], bounties: [], mainIdx: 0,
   log: [], cam: { x: 0, y: 0 }, shake: 0, shakeT: 0,
@@ -258,6 +259,7 @@ window.S = (function () {
       zoneId: G.zoneId,
       factions: G.factions.map(f => ({ id: f.id, strength: f.strength, gold: f.gold, points: f.points, relation: f.relation, joined: f.joined })),
       bounties: G.bounties,
+      bossDown: G.bossDown || {},
       mainIdx: G.mainIdx,
       explored: G.explored,
       flags: G.flags,
@@ -361,6 +363,7 @@ window.S = (function () {
       };
     });
     G.bounties = d.bounties || [];
+    G.bossDown = d.bossDown || {};
     G.statsData = d.statsData || { kills: 0, deaths: 0, weak: 0, execute: 0, gold: 0 };
     G.log = d.log || [];
     G.t = d.t || 0;

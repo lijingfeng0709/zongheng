@@ -56,6 +56,13 @@ window.E = (function () {
     p.invuln = Math.max(0, p.invuln - dt);
     p.swing = Math.max(0, (p.swing || 0) - dt);
     p.poisonBuff = Math.max(0, (p.poisonBuff || 0) - dt);
+    p.slowT = Math.max(0, (p.slowT || 0) - dt);
+    if (p.dot && p.dot.t > 0) {
+      p.dot.t -= dt;
+      p.hp -= p.dot.dmg * dt;
+      if (Math.random() < 0.14) E.addText(p.x + U.rand(-10, 10), p.y - 30, '-' + Math.round(p.dot.dmg), '#8ff07a', 11);
+      if (p.hp <= 0) { p.hp = 0; E.playerDie({ name: p.dot.name || '中毒' }); return; }
+    }
     for (const k in p.skillCd) p.skillCd[k] = Math.max(0, p.skillCd[k] - dt);
 
     // 增益
@@ -83,10 +90,23 @@ window.E = (function () {
       p.y += Math.sin(p.dashDir) * sp * dt;
       if (Math.random() < 0.6) E.fx('p', { x: p.x, y: p.y, vx: U.rand(-30, 30), vy: U.rand(-30, 30), color: '#9fb6d8', life: 0.25, max: 0.25, r: 2.4 });
     } else {
-      const sp = st.speed;
-      p.vx = dx * sp; p.vy = dy * sp;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
+      let sp = st.speed;
+      if (p.slowT > 0) sp *= 0.72;
+      if (G.hazard && G.hazard.blizz > 0) sp *= 0.72;
+      const onIce = window.W && W.onIce && W.onIce(p.x, p.y);
+      if (onIce) {
+        // 冰面：加速慢、刹不住
+        p.svx = (p.svx || 0) + (dx * sp - (p.svx || 0)) * Math.min(1, dt * 2.6);
+        p.svy = (p.svy || 0) + (dy * sp - (p.svy || 0)) * Math.min(1, dt * 2.6);
+        p.x += p.svx * dt;
+        p.y += p.svy * dt;
+        p.vx = p.svx; p.vy = p.svy;
+      } else {
+        p.svx = 0; p.svy = 0;
+        p.vx = dx * sp; p.vy = dy * sp;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+      }
     }
     E.resolveProps(p, p.r);
 
@@ -226,12 +246,15 @@ window.E = (function () {
       if (p.weakBuff > 0) p.weakBuff--;
     }
     dmg = Math.max(1, Math.round(dmg * U.rand(0.93, 1.07)));
+    if (e.shieldT > 0) dmg = Math.max(1, Math.round(dmg * 0.62));
 
     e.hp -= dmg;
     e.playerDmg = (e.playerDmg || 0) + dmg;   // 用于「被 AI 抢怪」判定
     e.hitFlash = 0.14;
     e.aggro = true;
     e.target = 'player';
+    // 精英 / 首领有仇恨记忆：脱战后仍会追一段时间
+    if (e.rank !== 'normal') e.hateT = e.rank === 'elite' ? 15 : 24;
 
     const col = mode === 'weak' ? '#ff9f43' : crit ? '#ffd166' : '#ffffff';
     E.addText(e.x + U.rand(-16, 16), e.y - e.r - 6 + U.rand(-8, 8), (mode === 'weak' ? '要害 ' : '') + U.fmt(dmg), col, mode === 'weak' ? 19 : 15);
@@ -349,7 +372,7 @@ window.E = (function () {
       try { AI.onPlayerDeath(src); } catch (e) {}
       p.killedBy = src.name;
     } else {
-      p.killedBy = '';
+      p.killedBy = (src && src.name) ? src.name : '';
     }
     const lost = Math.round(p.gold * 0.05);
     p.gold = Math.max(0, p.gold - lost);
@@ -532,12 +555,12 @@ window.E = (function () {
     const t = D.MONSTERS[tplId];
     if (!t) return null;
     opts = opts || {};
-    const lv = U.clamp(level || 1, 1, 40);
+    const lv = U.clamp(level || 1, 1, 60);
     const elite = !!opts.elite;
     const boss = !!t.boss;
     const rank = boss ? 'boss' : elite ? 'elite' : 'normal';
-    const hpM = (1 + (lv - 1) * 0.34) * (elite ? 6.2 : 1);
-    const atkM = (1 + (lv - 1) * 0.40) * (elite ? 1.55 : 1);
+    const hpM = (1 + (lv - 1) * 0.34) * (elite ? 3.4 : 1);
+    const atkM = (1 + (lv - 1) * 0.40) * (elite ? 1.40 : 1);
     const r = t.r * (elite ? 1.3 : 1);
 
     const e = {
@@ -548,7 +571,7 @@ window.E = (function () {
       atk: t.atk * atkM,
       def: 2 + lv * 2.4 * (elite ? 1.4 : 1) * (boss ? 1.8 : 1),
       speed: t.speed, range: t.range, rate: t.rate,
-      exp: t.exp * (1 + (lv - 1) * 0.26) * (elite ? 5 : 1),
+      exp: t.exp * (1 + (lv - 1) * 0.26) * (elite ? 4 : 1),
       aggro: false, aggroRange: t.aggro, state: 'idle',
       timer: U.rand(0.5, 2), windup: 0, stun: 0, slowT: 0, hitFlash: 0,
       weak: { ox: 0, oy: -r * (boss ? 0.42 : 0.55) }, weakR: r * (boss ? 0.3 : 0.34),
@@ -556,6 +579,8 @@ window.E = (function () {
       attackCd: U.rand(0.3, 1.2), phase: 0, chargeT: 0, chargeDir: 0,
       poison: null, burn: null, invuln: 0, target: null,
       isBoss: boss, ranged: !!t.ranged, summonT: 6,
+      beh: t.beh || {}, hateT: 0, shieldT: 0, shieldCd: U.rand(2, 5),
+      healCd: U.rand(3, 6), blinkCd: U.rand(4, 7), enraged: false,
       born: 0,
     };
     e.hp = e.maxHp;
@@ -586,6 +611,10 @@ window.E = (function () {
       e.stun = Math.max(0, e.stun - dt);
       e.attackCd = Math.max(0, e.attackCd - dt);
       e.slowT = Math.max(0, e.slowT - dt);
+      e.hateT = Math.max(0, (e.hateT || 0) - dt);
+      e.shieldT = Math.max(0, (e.shieldT || 0) - dt);
+      e.healCd = Math.max(0, (e.healCd || 0) - dt);
+      e.blinkCd = Math.max(0, (e.blinkCd || 0) - dt);
 
       // 持续伤害
       if (e.poison && e.poison.t > 0) {
@@ -612,7 +641,44 @@ window.E = (function () {
 
       // 仇恨
       if (!e.aggro && d < e.aggroRange) { e.aggro = true; e.state = 'chase'; }
-      if (e.aggro && d > e.aggroRange * 2.6) { e.aggro = false; e.state = 'return'; }
+      if (e.aggro && d > e.aggroRange * 2.6 && e.hateT <= 0) { e.aggro = false; e.state = 'return'; }
+      if (e.aggro && e.state === 'return' && e.hateT > 0) { e.state = 'chase'; }
+
+      // 残血狂暴
+      if (e.beh.enrage && !e.enraged && e.hp < e.maxHp * 0.4) {
+        e.enraged = true; e.atk *= 1.35; e.speed *= 1.1;
+        E.ring(e.x, e.y, e.r * 2, '#ff5b5b', 0.55);
+        U.log(`${e.name} 进入了狂暴状态。`, 'bad');
+      }
+      // 护盾
+      if (e.beh.shield && e.shieldCd <= 0 && e.shieldT <= 0) {
+        e.shieldT = 4.5; e.shieldCd = 9;
+        E.ring(e.x, e.y, e.r * 1.7, '#9fd8ff', 0.4);
+      }
+      // 治疗同伴
+      if (e.beh.heal && e.healCd <= 0) {
+        e.healCd = 7;
+        let healed = 0;
+        for (const o of G.enemies) {
+          if (o === e || o.dead || o.hp >= o.maxHp) continue;
+          if (U.dist(o.x, o.y, e.x, e.y) > 260) continue;
+          const hv = Math.round(o.maxHp * 0.16);
+          o.hp = Math.min(o.maxHp, o.hp + hv);
+          E.addText(o.x, o.y - o.r - 4, '+' + hv, '#5fd18d', 11);
+          healed++;
+          if (healed >= 3) break;
+        }
+        if (healed) E.ring(e.x, e.y, 120, '#7fd6a8', 0.35);
+      }
+      // 瞬移贴脸
+      if (e.beh.blink && e.blinkCd <= 0 && e.aggro && d > 180) {
+        e.blinkCd = 6;
+        const a = U.ang(e.x, e.y, target.x, target.y);
+        E.fx('p', { x: e.x, y: e.y, vx: 0, vy: 0, color: e.tpl.color, life: 0.4, max: 0.4, r: 14 });
+        e.x = target.x - Math.cos(a) * 70;
+        e.y = target.y - Math.sin(a) * 70;
+        E.ring(e.x, e.y, 50, e.tpl.color, 0.35);
+      }
 
       if (e.state === 'idle') {
         e.timer -= dt;
@@ -683,29 +749,56 @@ window.E = (function () {
 
   E.enemyStrike = function (e, target) {
     e.attackCd = 1 / e.rate;
+    const beh = e.beh || {};
     const d = U.dist(e.x, e.y, target.x, target.y);
     if (e.ranged) {
       const a = U.ang(e.x, e.y, target.x, target.y);
-      E.shoot(e, a, { speed: 300, dmgMult: 1, color: '#ff8b3d', r: 8, len: 16 });
+      E.shoot(e, a, { speed: 300, dmgMult: 1, color: e.tpl.color || '#ff8b3d', r: 8, len: 16 });
       U.sfx('hit');
+      if (beh.splash) {
+        // 抛射范围伤害：落点预警圈
+        const tx = target.x, ty = target.y;
+        E.fx('telegraph', { x: tx, y: ty, r: 92, life: 0.55, max: 0.55, color: '#ff9b3d' });
+        setTimeout(() => {
+          if (e.dead || !G.player) return;
+          E.ring(tx, ty, 92, '#ff9b3d', 0.35);
+          if (U.dist(tx, ty, G.player.x, G.player.y) < 100) E.damagePlayer(e.atk * 1.15, e);
+        }, 520);
+      }
       return;
     }
-    E.fx('slash', { x: e.x, y: e.y, a: U.ang(e.x, e.y, target.x, target.y), r: e.range * 1.1, arc: 1.5, color: e.tpl.color, life: 0.2, max: 0.2 });
+    E.fx('slash', { x: e.x, y: e.y, a: U.ang(e.x, e.y, target.x, target.y), r: e.range * 1.1, arc: beh.cleave ? 3.6 : 1.5, color: e.tpl.color, life: 0.2, max: 0.2 });
     if (e.chargePending) { e.chargePending = false; return; }
-    if (d <= e.range + target.r + 10) {
-      if (target.kind === 'player') E.damagePlayer(e.atk, e);
-      else if (target.kind === 'ai') E.damageAI(target, e.atk);
-      else E.damageAlly(target, e.atk);
+
+    const hitList = beh.cleave ? [G.player].concat(G.allies) : [target];
+    for (const t of hitList) {
+      if (!t || t.dead || t.hp <= 0) continue;
+      if (beh.cleave && U.dist(e.x, e.y, t.x, t.y) > e.range * 1.25 + t.r) continue;
+      const dd = U.dist(e.x, e.y, t.x, t.y);
+      if (dd > e.range + t.r + 12) continue;
+      if (t.kind === 'player') {
+        E.damagePlayer(e.atk, e);
+        if (beh.poison) {
+          G.player.dot = { dmg: Math.max(1, e.atk * 0.12), t: 5, name: e.name };
+        }
+        if (beh.slow) {
+          G.player.slowT = 3;
+          E.addText(G.player.x, G.player.y - 44, '迟缓', '#9fd8ff', 12);
+        }
+      } else if (t.kind === 'ai') E.damageAI(t, e.atk);
+      else E.damageAlly(t, e.atk);
     }
   };
 
   E.bossLogic = function (e, dt, target, d) {
     e.summonT -= dt;
-    if (e.summonT <= 0) {
-      e.summonT = 14;
-      for (let i = 0; i < 2; i++) {
+    if ((e.beh.summon || e.isBoss) && e.summonT <= 0) {
+      e.summonT = 15;
+      const add = typeof e.beh.summon === 'string' ? e.beh.summon : 'mineBat';
+      const n = e.beh.summon ? 2 : 1;
+      for (let i = 0; i < n; i++) {
         const a = U.rand(0, 6.28);
-        E.spawnEnemy('mineBat', e.x + Math.cos(a) * 70, e.y + Math.sin(a) * 70, e.level, {});
+        E.spawnEnemy(add, e.x + Math.cos(a) * 80, e.y + Math.sin(a) * 80, Math.max(1, e.level - 2), {});
       }
       E.ring(e.x, e.y, 90, e.tpl.color, 0.5);
       U.log(`${e.name} 召唤了随从。`, 'bad');

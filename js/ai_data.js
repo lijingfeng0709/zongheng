@@ -12,10 +12,10 @@ window.AID = (function () {
     { id: 'tianjiao',name: '天骄',     color: '#f0c24b', trait: '稳健',  home: 'town',    leader: '秦韵',   power: 88,  blurb: '精英主义，入会要看装备评分。' },
     { id: 'jinge',   name: '金戈铁马', color: '#c98b4b', trait: '投机',  home: 'rift',    leader: '铁马冰河', power: 84, blurb: '专做拍卖行生意，什么都能卖。' },
     { id: 'xiaotx',  name: '笑天下',   color: '#b06bff', trait: '投机',  home: 'swamp',   leader: '笑三少',  power: 78,  blurb: '嘴最碎的会，世界频道一半瓜是他们产的。' },
-    { id: 'tiandij', name: '天地劫',   color: '#6f9fe0', trait: '激进',  home: 'lavaRift',leader: '劫火',    power: 90,  blurb: '专挑攻城战下手，打完就散。' },
+    { id: 'tiandij', name: '天地劫',   color: '#6f9fe0', trait: '激进',  home: 'capital', leader: '劫火',    power: 90,  blurb: '专挑攻城战下手，打完就散。' },
     { id: 'yongheng',name: '永恒',     color: '#8fa6b8', trait: '稳健',  home: 'town',    leader: '永恒之约', power: 74,  blurb: '养老会，在线人数稳定得可怕。' },
     { id: 'yexing',  name: '夜行商盟', color: '#e0b45c', trait: '商人',  home: 'town',    leader: '夜行',    power: 66,  blurb: '做市商，双边报价，赚差价不打架。' },
-    { id: 'yueshen', name: '月神殿',   color: '#d9b571', trait: '稳健',  home: 'town',    leader: '月神',    power: 112, blurb: '团本进度第一，轻易不掺和野外。' },
+    { id: 'yueshen', name: '月神殿',   color: '#d9b571', trait: '稳健',  home: 'sanctum', leader: '月神',    power: 112, blurb: '团本进度第一，轻易不掺和野外。' },
     { id: 'sanren',  name: '散人',     color: '#7d8798', trait: '散人',  home: 'forest',  leader: '—',      power: 40,  blurb: '没有会，靠自己。' },
   ];
   AID.guild = id => AID.GUILDS.find(g => g.id === id) || AID.GUILDS[11];

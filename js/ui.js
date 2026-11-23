@@ -26,7 +26,16 @@ window.UI = (function () {
     $('hudLv').textContent = 'Lv.' + p.level;
     $('hudGold').textContent = U.fmt(p.gold);
     $('hudRep').textContent = U.fmt(p.rep);
-    $('hudZone').textContent = G.zone ? G.zone.name : '';
+    if (G.zone) {
+      let zn = G.zone.name;
+      if (G.hazard && G.hazard.blizz > 0) zn += ' · 暴风雪';
+      else if (G.hazard && G.hazard.type === 'miasma') zn += ' · 腐气';
+      else if (G.hazard && G.hazard.type === 'lava') zn += ' · 熔岩';
+      else if (G.hazard && G.hazard.type === 'runes') zn += ` · 符文 ${G.hazard.runes.filter(r => r.on).length}/${G.hazard.runes.length}`;
+      $('hudZone').textContent = zn;
+    } else {
+      $('hudZone').textContent = '';
+    }
     $('hudAvatar').textContent = D.CLASSES[p.cls].icon;
     $('hudAvatar').style.background = `radial-gradient(circle at 35% 30%, #fff, ${D.CLASSES[p.cls].color} 60%, #1a2230)`;
 
@@ -761,30 +770,97 @@ window.UI = (function () {
   }
 
   /* ================= 地图 ================= */
+  function zoneMobNames(z) {
+    const set = [];
+    (z.spawns || []).forEach(s => {
+      const m = D.MONSTERS[s.id];
+      if (m && set.indexOf(m.name) < 0) set.push(m.name);
+    });
+    return set;
+  }
+
   function panelMap() {
     const p = G.player;
+    const pos = D.MAP_POS || {};
+    const hereId = G.zoneId;
+    const cur = D.ZONES[hereId];
+
+    // 连线
+    const links = (D.ZONE_LINK || []).map(([a, b]) => {
+      const A = pos[a], B = pos[b];
+      if (!A || !B) return '';
+      const open = p.level >= W.needLevel(a) && p.level >= W.needLevel(b);
+      return `<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}"
+        stroke="${open ? 'rgba(201,163,92,.28)' : 'rgba(120,130,150,.14)'}"
+        stroke-width="${open ? 2 : 1.4}" stroke-dasharray="${open ? '' : '6 8'}" />`;
+    }).join('');
+
+    // 节点
+    const nodes = D.ZONE_ORDER.map(id => {
+      const z = D.ZONES[id];
+      const q = pos[id];
+      if (!q) return '';
+      const need = W.needLevel(id);
+      const locked = p.level < need;
+      const isHere = id === hereId;
+      const col = locked ? '#5d6878' : (z.accent || '#c9a35c');
+      const shape = z.dungeon
+        ? `<rect x="${q.x - 10}" y="${q.y - 10}" width="20" height="20" transform="rotate(45 ${q.x} ${q.y})"
+             fill="${locked ? '#171b24' : U.hexA(col, 0.22)}" stroke="${col}" stroke-width="${isHere ? 3 : 1.8}" />`
+        : `<circle cx="${q.x}" cy="${q.y}" r="${isHere ? 17 : 14}"
+             fill="${locked ? '#171b24' : U.hexA(col, 0.22)}" stroke="${col}" stroke-width="${isHere ? 3 : 1.8}" />`;
+      const inner = !locked ? `<circle cx="${q.x}" cy="${q.y}" r="4.5" fill="${col}" opacity=".85" />` : '';
+      const ring = isHere ? `<circle cx="${q.x}" cy="${q.y}" r="24" fill="none" stroke="${col}" stroke-width="1" opacity=".45" stroke-dasharray="3 5" />` : '';
+      const label = `<text x="${q.x}" y="${q.y + (z.dungeon ? 30 : 32)}" text-anchor="middle"
+        font-size="11" fill="${locked ? '#6b7688' : isHere ? '#f0d49a' : '#c9d3e2'}">${z.name}</text>`;
+      const sub = `<text x="${q.x}" y="${q.y + (z.dungeon ? 43 : 45)}" text-anchor="middle"
+        font-size="9" fill="${locked ? '#4d5769' : '#7b8699'}">${locked ? '需 Lv.' + need : 'Lv.' + z.lv[0] + '-' + z.lv[1]}</text>`;
+      const clickable = !locked && !isHere;
+      return `<g class="map-node${isHere ? ' cur' : ''}${locked ? ' lock' : ''}" ${clickable ? `data-travel="${id}"` : ''}
+        style="${clickable ? 'cursor:pointer' : ''}">${ring}${shape}${inner}${label}${sub}</g>`;
+    }).join('');
+
+    // 详情卡
     const cards = D.ZONE_ORDER.map(id => {
       const z = D.ZONES[id];
       const need = W.needLevel(id);
-      const here = G.zoneId === id;
       const locked = p.level < need;
-      return `<div class="card ${locked || here ? '' : 'click'}" data-travel="${id}" style="${here ? 'border-color:rgba(201,163,92,.5)' : ''}">
-        <div class="ct">
-          <span style="color:${here ? '#f0d49a' : '#dbe3ef'}">${z.name}
-            ${z.dungeon ? '<span style="font-size:9px;color:#b06bff;border:1px solid rgba(176,107,255,.4);padding:0 4px;border-radius:3px;margin-left:5px">副本</span>' : ''}
-          </span>
-          <span style="font-size:10px;color:${here ? '#5fd18d' : locked ? '#ff6b6b' : '#7b8699'}">${here ? '当前所在' : locked ? '需 Lv.' + need : '可前往'}</span>
+      const isHere = id === hereId;
+      const marks = (z.landmarks || []).map(l => l.name).join(' · ') || '—';
+      const mobs = zoneMobNames(z).slice(0, 5).join(' · ') || (z.safe ? '安全区，无野怪' : '—');
+      const haz = z.hazard ? `<span class="mc-tag haz">${z.hazard.type === 'miasma' ? '腐气' : z.hazard.type === 'lava' ? '熔岩' : z.hazard.type === 'blizzard' ? '暴风雪' : '结界'}</span>` : '';
+      const boss = z.boss ? `<span class="mc-tag boss">${D.MONSTERS[z.boss.id].name}</span>` : '';
+      const dun = z.dungeon ? `<span class="mc-tag dun">副本</span>` : '';
+      const status = isHere ? '<span style="color:#5fd18d">当前所在</span>' : locked ? `<span style="color:#ff6b6b">需 Lv.${need}</span>` : '<span style="color:#7b8699">可前往</span>';
+      return `<div class="map-card${isHere ? ' here' : ''}${locked ? ' lock' : ''}" ${(!locked && !isHere) ? `data-travel="${id}"` : ''}>
+        <div class="mc-top">
+          <b style="color:${isHere ? '#f0d49a' : '#dbe3ef'}">${z.name}</b>
+          <span class="mc-lv">${z.sub}</span>
+          <span class="mc-state">${status}</span>
         </div>
-        <div class="cd">${z.sub} · 区域等级 ${z.lv[0]}-${z.lv[1]}</div>
-        ${locked ? `<div style="font-size:10px;color:#ff6b6b;margin-top:5px">等级不足，暂不可前往</div>` : ''}
+        <div class="mc-line"><em>地标</em>${marks}</div>
+        <div class="mc-line"><em>怪物</em>${mobs}</div>
+        <div class="mc-tags">${dun}${haz}${boss}</div>
       </div>`;
     }).join('');
 
-    return head('地 图', '落霞城 · 安全区') + `<div class="p-body">
-      <div class="list">${cards}</div>
-      <div style="font-size:10.5px;color:#5d6878;margin-top:14px;line-height:1.8">
-        · 主城有杂货商、铁匠、训练师、任务板与势力使者。<br>
-        · 黑石矿洞与炎殇深渊为副本，内部有首领。首领掉落建帮令级道具与高品质装备。
+    return head('地 图', `${cur ? cur.name : '落霞村'} · ${D.ZONE_ORDER.length} 个区域 · 点节点直达`) + `<div class="p-body">
+      <div class="map-wrap">
+        <svg viewBox="0 0 1000 520" preserveAspectRatio="xMidYMid meet">
+          ${links}
+          ${nodes}
+        </svg>
+      </div>
+      <div class="map-legend">
+        <span><i class="dot"></i>圆形 = 野外 / 主城</span>
+        <span><i class="dia"></i>菱形 = 副本</span>
+        <span><i class="ring"></i>虚线圈 = 你在这里</span>
+        <span>灰色 = 等级不足</span>
+      </div>
+      <div class="map-grid">${cards}</div>
+      <div class="ct-note">
+        区域随等级解锁，等级不够时节点会变灰；直接点节点或下方卡片即可传送。<br>
+        野外首领击杀后 3 分钟重生；副本首领每次进场都会重新站到自己的位置上。
       </div>
     </div>`;
   }
@@ -970,6 +1046,16 @@ window.UI = (function () {
               全服 1200 人，每一个都有自己的作息、脾气和账本。他们会练级、抢你的怪、抢你的悬赏、在频道里骂人，也会记住你杀过他。<br>
               头顶带〈公会〉名字的人就是 AI。红圈的是要来杀你的。<br>
               他们同样会死——被野怪打死、被你打死，都会掉级、会记仇。
+            </div>
+          </div>
+          <div class="stat-block"><h3>地 图 与 危 险</h3>
+            <div style="font-size:11.5px;color:#8b95a8;line-height:1.9">
+              按 <b>M</b> 打开世界地图，点节点直接传送；等级不够的节点会变灰。<br>
+              浅水沼泽的<b style="color:#8ff07a">腐气</b>每秒掉血，站进净化点（绿色虚线圈）免疫；
+              赤焰海的<b style="color:#ff8b3d">熔岩池</b>踩上去会持续烧血；
+              霜语冰原会起<b style="color:#9fd8ff">暴风雪</b>，冰面上还会打滑；
+              幻灵秘境要点亮三座<b style="color:#c9a3ff">符文柱</b>，神殿首领才会出现。<br>
+              精英有仇恨记忆，野外首领被击杀后 3 分钟重生。
             </div>
           </div>
           <div class="stat-block"><h3>成 长</h3>

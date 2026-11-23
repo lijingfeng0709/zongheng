@@ -420,6 +420,7 @@
     W.factionTick(dt);
     W.bountyTick(dt);
     W.updateCapture(dt);
+    W.zoneTick(dt);
     W.updateNear();
     if (window.AI) AI.tick(dt);
 
