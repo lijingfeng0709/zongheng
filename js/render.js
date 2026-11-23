@@ -756,6 +756,58 @@ window.R = (function () {
 
     // NPC
     for (const n of G.npcs) drawNpc(n);
+
+    drawPkHints();
+  }
+
+  /* 决斗标记 / 自由 PK 的目标提示 */
+  function drawPkHints() {
+    const duel = G.duel && G.duel.ent;
+    if (G.pk && G.pk.mode) {
+      for (const a of (G.aiEnts || [])) {
+        if (a.dead || a === duel) continue;
+        const d = U.dist(a.x, a.y, G.player.x, G.player.y);
+        if (d > 560) continue;
+        ctx.strokeStyle = 'rgba(255,90,90,.5)';
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([4, 5]);
+        ctx.beginPath();
+        ctx.arc(a.x, a.y - 4, a.r + 8, 0, 6.283);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+    if (!duel || duel.dead) return;
+    const bob = Math.sin(G.t * 4) * 3;
+    const y = duel.y - duel.r - 34 + bob;
+    // 交叉双剑
+    ctx.save();
+    ctx.translate(duel.x, y);
+    ctx.strokeStyle = '#ffd166';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-7, 5); ctx.lineTo(7, -5);
+    ctx.moveTo(7, 5); ctx.lineTo(-7, -5);
+    ctx.stroke();
+    ctx.restore();
+    // 标签
+    ctx.font = '10px "Microsoft YaHei",sans-serif';
+    ctx.textAlign = 'center';
+    const txt = G.duel.phase === 'count' ? `战书 ${Math.max(1, Math.ceil(G.duel.t))}` : '决斗中';
+    const w = ctx.measureText(txt).width + 12;
+    ctx.fillStyle = 'rgba(60,14,14,.85)';
+    if (ctx.roundRect) {
+      ctx.beginPath(); ctx.roundRect(duel.x - w / 2, y - 22, w, 15, 4); ctx.fill();
+    } else ctx.fillRect(duel.x - w / 2, y - 22, w, 15);
+    ctx.fillStyle = '#ffb3b3';
+    ctx.fillText(txt, duel.x, y - 11);
+    // 脚下光环
+    ctx.strokeStyle = 'rgba(255,120,90,.5)';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.ellipse(duel.x, duel.y + duel.r * 0.7, duel.r * 1.5, duel.r * 0.6, 0, 0, 6.283);
+    ctx.stroke();
   }
 
   function shadow(x, y, r) {
@@ -953,13 +1005,13 @@ window.R = (function () {
     const hy = a.y - r - 22;
     ctx.fillStyle = 'rgba(0,0,0,.6)';
     ctx.fillRect(a.x - w / 2, hy, w, 4);
-    ctx.fillStyle = a.hostile ? '#ff6b6b' : '#8fd8a0';
+    ctx.fillStyle = (a.hostile || a.red) ? '#ff6b6b' : '#8fd8a0';
     ctx.fillRect(a.x - w / 2, hy, w * U.clamp(a.hp / a.maxHp, 0, 1), 4);
 
     // 名字：公会 · 名字 Lv
     ctx.font = '11px "Microsoft YaHei",sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = a.hostile ? '#ff9b9b' : U.hexA(a.gcolor, 0.95);
+    ctx.fillStyle = (a.hostile || a.red) ? '#ff9b9b' : U.hexA(a.gcolor, 0.95);
     const tag = a.guildName ? `〈${a.guildName}〉` : '';
     ctx.fillText(`${tag}${a.name}`, a.x, hy - 5);
     ctx.font = '9px "Microsoft YaHei",sans-serif';
@@ -1418,6 +1470,15 @@ window.R = (function () {
         ctx.fillStyle = g2;
         ctx.fillRect(0, 0, vw, vh);
       }
+    }
+
+    // 自由 PK：画面四边泛红，提醒你正在能杀人的状态
+    if (G.pk && G.pk.mode) {
+      const gp = ctx.createRadialGradient(vw / 2, vh / 2, Math.min(vw, vh) * 0.42, vw / 2, vh / 2, Math.max(vw, vh) * 0.7);
+      gp.addColorStop(0, 'rgba(180,20,20,0)');
+      gp.addColorStop(1, `rgba(170,20,20,${0.16 + Math.sin(G.t * 2.4) * 0.04})`);
+      ctx.fillStyle = gp;
+      ctx.fillRect(0, 0, vw, vh);
     }
   }
 

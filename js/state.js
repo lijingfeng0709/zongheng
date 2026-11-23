@@ -12,6 +12,8 @@ window.G = {
   explored: {}, flags: {}, uid: 1, slot: 1,
   mouse: { x: 0, y: 0, wx: 0, wy: 0, down: false },
   keys: {}, dialogNpc: null, nearNpc: null, nearPortal: false,
+  pk: { mode: false, hold: false },      // 自由 PK：mode = X 键开关，hold = 按住 Shift/Ctrl
+  duel: null,                             // 当前决斗 { ent, phase, t, away }
   lastHitT: 0, combo: 0, comboText: '',
   statsData: { kills: 0, deaths: 0, weak: 0, execute: 0, gold: 0 },
 };

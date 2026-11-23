@@ -36,6 +36,9 @@ window.W = (function () {
     G.bossCd = {};
     G.runes = [];
     G.hazard = null;
+    // 换图即中断决斗，PK 模式在安全区自动熄灭
+    if (G.duel && window.AI && AI.endDuel) { try { AI.endDuel('abort'); } catch (e) {} }
+    if (z.safe && G.pk) G.pk.mode = false;
 
     buildProps(z);
     buildDecor(z);
@@ -114,6 +117,13 @@ window.W = (function () {
       UI.updateQuestHud();
       U.log(`进入 ${z.name}。`, z.safe ? '' : 'hot');
       if (z.hazard) U.log(hazardTip(z.hazard), 'hot');
+      // 第一次离开安全区时，把 PK 的入口教给玩家
+      if (!z.safe && !G.flags.pkHint) {
+        G.flags.pkHint = 1;
+        setTimeout(() => {
+          U.toast('这里能动手了：<b>右键点 AI 玩家</b>可下战书决斗，按 <b>X</b> 开自由 PK', 'hot');
+        }, 1400);
+      }
     }
     S.save();
   };

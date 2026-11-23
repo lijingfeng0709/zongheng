@@ -458,6 +458,16 @@ window.AI = (function () {
     s.rumorAcc += dt;
     if (s.rumorAcc >= 150) { s.rumorAcc = 0; AI.makeRumor(); }
 
+    // 恶名与 AI 的红名都会随时间淡下去
+    if ((G.flags.evil || 0) > 0) G.flags.evil = Math.max(0, G.flags.evil - dt * 0.25);
+    if (s.redAcc === undefined) s.redAcc = 0;
+    s.redAcc += dt;
+    if (s.redAcc >= 5) {
+      s.redAcc = 0;
+      for (const a of s.agents) if (a.red > 0) a.red = Math.max(0, a.red - 8);
+    }
+
+    AI.updateDuel(dt);
     AI.updateEnts(dt);
   };
 
@@ -605,8 +615,17 @@ window.AI = (function () {
 
   AI.hostileNow = function (a) {
     const p = G.player;
-    if (!p || p.level < 15) return false;      // Lv15 以下不进 PK 池
+    if (!p || p.dead) return false;
     if (a.hostT > 0) return false;
+    const red = (G.flags.evil || 0) >= 300;
+    if (red) {
+      // 红名玩家是全服公敌：稍微像样的人都想来分一杯羹
+      if (p.level < 10) return false;
+      if (a.pers.agg < 0.2) return false;
+      if (a.lv < p.level - 12) return false;   // 差太多的只敢在频道里骂
+      return true;
+    }
+    if (p.level < 15) return false;      // Lv15 以下不进 PK 池
     if (a.att > -60) return false;
     if (a.pers.agg < 0.4) return false;
     return true;
@@ -709,7 +728,7 @@ window.AI = (function () {
     const shadowN = 6;
     for (let i = 0; i < shadowN; i++) {
       const lv = 26 + ((i * 7919 + s.seed) % 7);
-      rows.push({ id: 'sh' + i, name: pick(AID.NAME_A) + pick(AID.NAME_B), lv, job: pick(['剑士', '法师', '刺客', '骑士']), guild: pick(AID.GUILDS.slice(0, 8)).name, gcolor: '#6b7688', isPlayer: false, state: 'offline' });
+      rows.push({ id: 'sh' + i, name: pick(AID.NAME_A) + pick(AID.NAME_B), lv, job: pick(['剑士', '法师', '刺客', '骑士']), guild: pick(AID.GUILDS.slice(0, 8)).name, gcolor: '#6b7688', isPlayer: false, state: 'offline', shadow: true });
     }
     rows.sort((a, b) => b.lv - a.lv || (b.isPlayer ? -1 : 1));
     const ranked = rows.map((r, i) => Object.assign(r, { rank: i + 1 }));
@@ -799,32 +818,70 @@ window.AI = (function () {
     }
   };
 
-  AI.onPlayerKillAI = function (ent) {
+  /* 附近看热闹的 AI 会记住这件事 */
+  AI.witnessAt = function (x, y, delta, type, note, radius) {
+    for (const ent of (G.aiEnts || [])) {
+      if (ent.dead || !ent.agent) continue;
+      if (U.dist(ent.x, ent.y, x, y) < (radius || 460) && chance(0.5)) {
+        AI.adjust(ent.agent, delta, type || 'witness', note || '', 0);
+      }
+    }
+  };
+
+  AI.onPlayerKillAI = function (ent, opts) {
+    opts = opts || {};
     const s = st();
-    if (!s) return;
-    const a = ent.agent;
     const p = G.player;
+    if (!s || !p) { ent.dead = true; return; }
+    const a = ent.agent;
+    const duel = !!opts.duel || !!(G.duel && G.duel.ent === ent);
+    const wasRed = !!opts.red || !!ent.red;
+    const zn = zoneName(G.zoneId);
+
     a.deaths++;
     s.stat.deaths++;
-    AI.adjust(a, -70, 'killed', `在${zoneName(G.zoneId)}被你杀了`, 0);
-    a.needs.revenge = Math.min(100, a.needs.revenge + 55);
+    a.needs.revenge = Math.min(100, a.needs.revenge + (duel ? 24 : 55));
     a.hostT = 0;
     s.stat.pks++;
-    // 恶名：主动杀白名
-    G.flags.evil = (G.flags.evil || 0) + 100;
-    s.pkRecent += 1.5;
-    if (G.flags.evil >= 300 && !s.hooksFired.redname) {
-      s.hooksFired.redname = 1;
-      AI.pushLog(`${p.name} 恶名值突破 300，名字变红了。`, 'pvp');
-      U.toast('你现在是红名：死亡会爆装备，AI 也会主动来杀你', 'bad');
+
+    if (duel) {
+      // 决斗点到为止：不掉恶名，赢家拿声望
+      AI.adjust(a, -12, 'duel', `在${zn}的决斗里输给你`, 0);
+      p.rep = (p.rep || 0) + 18;
+      const gold = Math.round(60 + a.lv * 8);
+      p.gold += gold;
+      U.toast(`决斗胜利：声望 +18，${gold} 金币`, 'good');
+      AI.pushLog(`${p.name} 在${zn}的决斗里赢了 ${a.name}（${a.job} Lv.${a.lv}）。`, 'pvp');
+      AI.witnessAt(ent.x, ent.y, +3, 'duel', `看见你光明正大赢了 ${a.name}`);
+    } else if (wasRed) {
+      // 杀红名：替天行道，不涨恶名还加声望
+      AI.adjust(a, -20, 'killed', `在${zn}被你杀了`, 0);
+      p.rep = (p.rep || 0) + 8;
+      const gold = Math.round(a.gold * 0.15 + 20);
+      p.gold += gold;
+      U.toast(`击杀红名 ${a.name}：声望 +8、${gold} 金币，没涨恶名`, 'good');
+      AI.pushLog(`${p.name} 在${zn}杀了红名 ${a.name}，频道里有人叫好。`, 'pvp');
+      AI.witnessAt(ent.x, ent.y, +4, 'punish', `看见你杀了红名 ${a.name}`);
+    } else {
+      // 白名强杀：恶名 +100，红名后全服追杀
+      AI.adjust(a, -70, 'killed', `在${zn}被你杀了`, 0);
+      G.flags.evil = (G.flags.evil || 0) + 100;
+      s.pkRecent += 1.5;
+      const gold = Math.round(a.gold * 0.12 + 10);
+      p.gold += gold;
+      p.rep = Math.max(0, p.rep - 3);
+      U.toast(`击杀 ${a.name}：+${gold} 金币，恶名 +100`, 'bad');
+      AI.pushLog(`${p.name} 在${zn}击杀了 ${a.name}（${a.job} Lv.${a.lv}）。`, 'pvp');
+      AI.witnessAt(ent.x, ent.y, -6, 'murder', `看见你杀了 ${a.name}`);
+      if (G.flags.evil >= 300 && !s.hooksFired.redname) {
+        s.hooksFired.redname = 1;
+        AI.pushLog(`${p.name} 恶名值突破 300，名字变红了。`, 'pvp');
+        U.toast('你现在是红名：死亡会掉更多钱和一件背包物品，AI 也会主动来杀你', 'bad');
+      }
     }
-    // 战利品
-    const gold = Math.round(a.gold * 0.12 + 10);
-    p.gold += gold;
-    p.rep = Math.max(0, p.rep - 3);
-    U.toast(`击杀 ${a.name}：+${gold} 金币，恶名 +100`, 'bad');
-    AI.pushLog(`${p.name} 在${zoneName(G.zoneId)}击杀了 ${a.name}（${a.job} Lv.${a.lv}）。`, 'pvp');
-    if (chance(0.55)) {
+
+    // 战利品（决斗不爆装，强杀有概率掉）
+    if (!duel && chance(0.55)) {
       const it = I.gen(clamp(a.lv, 1, 40), I.rollQuality(1.2, 1), null, p.cls);
       I.add(it, true);
     }
@@ -832,14 +889,16 @@ window.AI = (function () {
     const gA = AID.guild(a.guild);
     if (gA.id !== 'sanren') {
       const f = G.factions.find(x => x.name === gA.name);
-      if (f) f.relation = clamp(f.relation - 8, -100, 100);
+      if (f) f.relation = clamp(f.relation - (duel ? 2 : 8), -100, 100);
     }
+
     ent.dead = true;
     const i = G.aiEnts.indexOf(ent);
     if (i >= 0) G.aiEnts.splice(i, 1);
     E.burst(ent.x, ent.y, ent.color, 18, 240);
     U.sfx('die');
     a.state = 'offline';
+    if (duel && G.duel) AI.endDuel('win', true);
     // 30 秒后在别处复活继续练级
     setTimeout(() => { if (a.state === 'offline') { a.state = 'active'; a.zone = zoneForLevel(a.lv); a.hpTip = 1; } }, 30000);
   };
@@ -853,9 +912,18 @@ window.AI = (function () {
     s.stat.pks++;
     s.deathBy[a.id] = (s.deathBy[a.id] || 0) + 1;
     s.pkRecent += 1;
-    AI.adjust(a, -6, 'pvp', `在${zoneName(G.zoneId)}杀了你`, 0);
-    AI.pushLog(`${a.name} 在${zoneName(G.zoneId)}把 ${G.player.name} 放倒了。`, 'pvp');
-    if (s.deathBy[a.id] === 3) {
+    const duel = !!(G.duel && G.duel.ent === src);
+    if (duel) {
+      // 决斗里赢你：他长脸，但你不会因此被反复追杀
+      AI.adjust(a, +2, 'duel', `在${zoneName(G.zoneId)}的决斗里赢了你`, 0);
+      AI.pushLog(`${a.name} 在决斗中赢了 ${G.player.name}。`, 'pvp');
+      src.bubble = { text: pick(['承让', '还差一点', '再来']), t: 3 };
+    } else {
+      AI.adjust(a, -6, 'pvp', `在${zoneName(G.zoneId)}杀了你`, 0);
+      a.red = clamp((a.red || 0) + 60, 0, 999);   // 野外杀白名 → 他也红名
+      AI.pushLog(`${a.name} 在${zoneName(G.zoneId)}把 ${G.player.name} 放倒了。`, 'pvp');
+    }
+    if (!duel && s.deathBy[a.id] === 3) {
       // 反挫败熔断：连续 3 次被同一人杀 → 他去别处 30 分钟，并给你线索
       a.hostT = 1800;
       a.zone = pick(['forest', 'swamp', 'rift', 'glacier', 'sanctum']);
@@ -863,6 +931,170 @@ window.AI = (function () {
       AI.pushLog(`${a.name} 好像暂时离开这片区域了。`, 'system');
       s.deathBy[a.id] = 0;
     }
+  };
+
+  /* ================= 决斗（下战书） ================= */
+  AI.duelActive = function () { return !!G.duel; };
+
+  /* 把某个 agent 拉进当前场景（天榜远程约战用） */
+  AI.ensureEnt = function (a) {
+    const p = G.player;
+    if (!p) return null;
+    let ent = (G.aiEnts || []).find(e => e.agent === a && !e.dead);
+    if (ent) return ent;
+    const ang = Math.random() * 6.283;
+    const dd = 260 + Math.random() * 160;
+    const x = clamp(p.x + Math.cos(ang) * dd, 90, (G.zone ? G.zone.w : 2000) - 90);
+    const y = clamp(p.y + Math.sin(ang) * dd, 90, (G.zone ? G.zone.h : 2000) - 90);
+    ent = AI.makeEnt(a, x, y);
+    G.aiEnts.push(ent);
+    return ent;
+  };
+
+  /* 战书：AI 依性格与实力决定接不接 */
+  AI.duelAsk = function (ent, opts) {
+    opts = opts || {};
+    const p = G.player;
+    if (!p || !ent || ent.dead) return false;
+    if (!G.zone || G.zone.safe) { U.toast('安全区内不能决斗，出城再说', 'bad'); return false; }
+    if (G.duel) { U.toast('你已经在决斗中', 'bad'); return false; }
+    const a = ent.agent;
+    const diff = a.lv - p.level;
+    let score = 0.34 * a.pers.agg + 0.30 * a.pers.hon + 0.22 * a.pers.risk
+      - 0.22 * a.pers.pat + (diff <= 2 ? 0.22 : diff >= 8 ? -0.40 : 0);
+    if ((G.flags.evil || 0) >= 300) score += 0.25;        // 你红名，他更想动手
+    if (ent.provoked || a.att < -30) score += 0.30;       // 本来就有仇
+    if (opts.force) score += 1;
+    if (score < 0.34 && !opts.force) {
+      ent.bubble = { text: pick(['不打', '没空', '你还不够格', '去找别人', '凭什么']), t: 2.8 };
+      AI.adjust(a, -2, 'refuse', `你当众向他下战书，他拒绝了`, 0);
+      U.log(`<b>${U.esc(a.name)}</b> 拒绝了你的决斗。`, 'bad');
+      U.sfx('ui');
+      return false;
+    }
+    AI.beginDuel(ent);
+    return true;
+  };
+
+  AI.beginDuel = function (ent) {
+    const a = ent.agent;
+    G.duel = { ent, name: a.name, phase: 'count', t: 3, away: 0 };
+    ent.provoked = false;                // 倒计时期间不打，除非你自己先动手
+    ent.hostile = false;
+    ent.duel = true;
+    ent.hp = ent.maxHp;                  // 决斗前回满，公平
+    G.player.duelEnt = ent;
+    AI.pushLog(`${G.player.name} 向 ${a.name} 下了战书，${a.name} 接了。`, 'pvp');
+    U.log(`<b>${U.esc(a.name)}</b> 接下了你的决斗。三秒后开打。`, 'hot');
+    ent.bubble = { text: pick(['来吧', '让你三招', '别怪我', '正好活动筋骨']), t: 3 };
+    U.sfx('ui');
+    if (window.UI && UI.refreshDuel) UI.refreshDuel();
+  };
+
+  AI.updateDuel = function (dt) {
+    const d = G.duel;
+    if (!d) return;
+    const p = G.player;
+    if (!p || p.dead || !d.ent || d.ent.dead) { AI.endDuel('abort'); return; }
+    const ent = d.ent;
+    if (d.phase === 'count') {
+      d.t -= dt;
+      // 倒计时期间把他拉到身边，别让玩家满地图追
+      const dist = U.dist(p.x, p.y, ent.x, ent.y);
+      if (dist > 220) {
+        const ang = U.ang(ent.x, ent.y, p.x, p.y);
+        ent.x += Math.cos(ang) * 180 * dt;
+        ent.y += Math.sin(ang) * 180 * dt;
+      }
+      if (d.t <= 0) {
+        d.phase = 'fight';
+        d.t = 0;
+        ent.hostile = true;
+        ent.provoked = true;
+        U.toast('决斗开始！', 'bad');
+        U.sfx('crit');
+        E.shake(6, 0.2);
+      }
+      return;
+    }
+    // 中途认输：胆子小的残血会服软
+    if (ent.hp < ent.maxHp * 0.16 && ent.agent.pers.risk < 0.45 && chance(dt * 1.4)) {
+      ent.bubble = { text: pick(['我认输', '停手', '算你赢']), t: 3 };
+      const p2 = G.player;
+      p2.rep = (p2.rep || 0) + 12;
+      p2.gold += 40 + ent.lv * 4;
+      U.toast(`${ent.name} 认输了：声望 +12`, 'good');
+      AI.pushLog(`${ent.name} 在决斗里向 ${p2.name} 认输。`, 'pvp');
+      AI.endDuel('win', true);
+      return;
+    }
+    // 跑太远就算弃权
+    if (U.dist(p.x, p.y, ent.x, ent.y) > 1200) {
+      d.away += dt;
+      if (d.away > 8) AI.endDuel('flee');
+    } else d.away = 0;
+  };
+
+  AI.endDuel = function (reason, silent) {
+    const d = G.duel;
+    if (!d) return;
+    if (d.ent) { d.ent.duel = false; d.ent.provoked = false; }
+    if (G.player) G.player.duelEnt = null;
+    G.duel = null;
+    if (!silent) {
+      if (reason === 'lose') {
+        U.log('决斗输了。三秒后在落霞城醒来。', 'bad');
+      } else if (reason === 'flee') {
+        U.toast('你跑出了决斗场，决斗作废', 'bad');
+        AI.pushLog(`${G.player.name} 和 ${d.name} 的决斗不了了之。`, 'pvp');
+      }
+    }
+    if (window.UI && UI.refreshDuel) UI.refreshDuel();
+  };
+
+  /* 挑衅：把路人变成仇人（快捷开战手段） */
+  AI.taunt = function (ent) {
+    const a = ent && ent.agent;
+    if (!a) return;
+    if (!G.zone || G.zone.safe) { U.toast('安全区内不能挑衅', 'bad'); return; }
+    AI.adjust(a, -14, 'taunt', `你在${zoneName(G.zoneId)}当众挑衅他`, 0);
+    a.needs.revenge = Math.min(100, a.needs.revenge + 40);
+    ent.provoked = true;
+    ent.bubble = { text: pick(['你找死', '行，那就打', '记住了', '来啊']), t: 2.8 };
+    U.toast(`你挑衅了 ${a.name}，他动手了`, 'bad');
+    U.log(`你当众挑衅 <b>${U.esc(a.name)}</b>。`, 'bad');
+    U.sfx('ui');
+    if (window.AI && AI.pushLog) AI.pushLog(`${G.player.name} 在${zoneName(G.zoneId)}挑衅了 ${a.name}。`, 'pvp');
+  };
+
+  /* 天榜「约战」：他跑到你面前 */
+  AI.challengeRival = function (a) {
+    const p = G.player;
+    if (!a || !p) return;
+    if (!G.zone || G.zone.safe) { U.toast('安全区内不能决斗，出城再说', 'bad'); return; }
+    if (G.duel) { U.toast('你已经在决斗中', 'bad'); return; }
+    const ent = AI.ensureEnt(a);
+    if (!ent) return;
+    ent.x = clamp(p.x + 300, 90, G.zone.w - 90);
+    ent.y = clamp(p.y - 60, 90, G.zone.h - 90);
+    ent.hostile = true;
+    ent.provoked = true;
+    U.toast(`${a.name} 赶来了`, 'hot');
+    U.log(`你向天榜上的 <b>${U.esc(a.name)}</b> 下了战书，他赶来了。`, 'hot');
+    AI.beginDuel(ent);
+  };
+
+  /* 玩家打开自由 PK 时，附近的人会警觉 */
+  AI.onPkMode = function () {
+    let react = 0;
+    for (const ent of (G.aiEnts || [])) {
+      if (ent.dead) continue;
+      if (U.dist(ent.x, ent.y, G.player.x, G.player.y) < 380 && chance(0.6)) {
+        ent.bubble = { text: pick(['开红了？', '离我远点', '想动手？', '别惹我']), t: 2.6 };
+        react++;
+      }
+    }
+    if (react) AI.pushLog(`${G.player.name} 开了自由 PK，附近 ${react} 个人退了半步。`, 'pvp');
   };
 
   AI.onPlayerGift = function (a, gold) {
@@ -974,8 +1206,10 @@ window.AI = (function () {
       ent.hitFlash = Math.max(0, ent.hitFlash - dt);
       ent.wanderT -= dt;
       if (ent.bubble) { ent.bubble.t -= dt; if (ent.bubble.t <= 0) ent.bubble = null; }
-      ent.hostile = !(G.zone && G.zone.safe) && !!(ent.provoked || AI.hostileNow(a));
-      ent.red = (G.flags.evil || 0) >= 300 && ent.hostile;
+      const inDuel = !!(G.duel && G.duel.ent === ent);
+      ent.hostile = !(G.zone && G.zone.safe) &&
+        !!(ent.provoked || AI.hostileNow(a) || (inDuel && G.duel.phase === 'fight'));
+      ent.red = (a.red || 0) > 0;      // 红名 = AI 自己背了恶名，谁都能杀他
 
       ent.noHit += dt;
       if (ent.noHit > 6) ent.hp = Math.min(ent.maxHp, ent.hp + ent.maxHp * 0.04 * dt);

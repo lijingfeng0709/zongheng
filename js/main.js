@@ -351,25 +351,36 @@
       else if (k === 'q') E.cycleStance();
       else if (k === 'e') W.interact();
       else if (k === 'r') E.usePotion();
+      else if (k === 'x') togglePk();
     });
 
     window.addEventListener('keyup', e => { G.keys[e.key.toLowerCase()] = false; });
-    window.addEventListener('blur', () => { G.keys = {}; G.mouse.down = false; });
+    window.addEventListener('blur', () => { G.keys = {}; G.mouse.down = false; if (G.pk) G.pk.hold = false; });
 
     cv.addEventListener('mousemove', e => {
       G.mouse.x = e.clientX;
       G.mouse.y = e.clientY;
       G.mouse.wx = e.clientX / R.ZOOM + G.cam.x;
       G.mouse.wy = e.clientY / R.ZOOM + G.cam.y;
+      G.pk.hold = !!(e.shiftKey || e.ctrlKey);
     });
     cv.addEventListener('mousedown', e => {
       if (e.button !== 0) return;
       G.mouse.down = true;
+      G.pk.hold = !!(e.shiftKey || e.ctrlKey);
       G.mouse.x = e.clientX; G.mouse.y = e.clientY;
       G.mouse.wx = e.clientX / R.ZOOM + G.cam.x; G.mouse.wy = e.clientY / R.ZOOM + G.cam.y;
     });
     window.addEventListener('mouseup', () => { G.mouse.down = false; });
-    cv.addEventListener('contextmenu', e => e.preventDefault());
+    cv.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      if (!G.running || G.paused) return;
+      const wx = e.clientX / R.ZOOM + G.cam.x;
+      const wy = e.clientY / R.ZOOM + G.cam.y;
+      const ent = E.aiAt(wx, wy, 14);
+      if (ent) UI.aiMenu(ent, e.clientX, e.clientY);
+      else UI.closeAiMenu();
+    });
     cv.addEventListener('wheel', e => e.preventDefault(), { passive: false });
 
     // HUD 按钮
@@ -386,6 +397,21 @@
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) { G.mouse.down = false; G.keys = {}; if (G.player) S.save(); }
     });
+  }
+
+  function togglePk() {
+    const p = G.player;
+    if (!p || p.dead) return;
+    if (G.zone && G.zone.safe) { U.toast('安全区内不能开启自由 PK，出城再试', 'bad'); return; }
+    G.pk.mode = !G.pk.mode;
+    if (G.pk.mode) {
+      U.toast('自由 PK 已开启：攻击会命中所有 AI 玩家，杀人涨恶名', 'bad');
+      if (window.AI && AI.onPkMode) AI.onPkMode();
+    } else {
+      U.toast('自由 PK 已关闭', 'good');
+    }
+    U.sfx('ui');
+    UI.refreshHUD(true);
   }
 
   function dash() {
@@ -410,6 +436,7 @@
     const p = G.player;
     if (!p) return;
     G.t += dt;
+    if (G.pk) G.pk.hold = !!(G.keys['shift'] || G.keys['control'] || G.keys['meta']);
 
     E.updatePlayer(dt);
     E.updateEnemies(dt);
@@ -445,6 +472,7 @@
 
     hudT += dt;
     if (hudT > 0.1) { hudT = 0; if (G.running) UI.refreshHUD(); }
+    if (G.running && UI.refreshDuel) UI.refreshDuel(dt);
   }
 
   /* ---------- 启动 ---------- */

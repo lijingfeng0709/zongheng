@@ -39,6 +39,24 @@ window.UI = (function () {
     $('hudAvatar').textContent = D.CLASSES[p.cls].icon;
     $('hudAvatar').style.background = `radial-gradient(circle at 35% 30%, #fff, ${D.CLASSES[p.cls].color} 60%, #1a2230)`;
 
+    // 恶名 / 自由 PK 状态：让玩家随时知道自己在什么处境
+    const evil = Math.round(G.flags.evil || 0);
+    const evilEl = $('hudEvil');
+    if (evilEl) {
+      evilEl.classList.toggle('hidden', evil <= 0);
+      evilEl.classList.toggle('red', evil >= 300);
+      evilEl.title = evil >= 300 ? '红名：死亡掉更多金币与一件背包物品，AI 会主动追杀' : '恶名：主动击杀白名玩家累积，会随时间消退';
+      evilEl.querySelector('b').textContent = evil >= 300 ? `红名 ${evil}` : evil;
+    }
+    const pkEl = $('hudPk');
+    if (pkEl) {
+      const on = !!(G.pk && G.pk.mode);
+      pkEl.classList.toggle('on', on);
+      pkEl.classList.toggle('hold', !on && !!(G.pk && G.pk.hold));
+    }
+    const nameEl = $('hudName');
+    if (nameEl) nameEl.style.color = evil >= 300 ? '#ff6b6b' : '';
+
     // 在线人数：让「服务器很大」这件事一直在眼前
     const onEl = $('hudOnline');
     if (onEl && window.AI && AI.populationView) {
@@ -121,6 +139,87 @@ window.UI = (function () {
       if (p.potionCd > 0) { pcd.style.display = 'flex'; pcd.textContent = Math.ceil(p.potionCd); }
       else pcd.style.display = 'none';
     }
+  };
+
+  /* ================= 决斗横幅 ================= */
+  UI.refreshDuel = function () {
+    const bar = $('duelBar');
+    if (!bar) return;
+    const d = G.duel, p = G.player;
+    if (!d || !p || !d.ent) {
+      if (!bar.classList.contains('hidden')) bar.classList.add('hidden');
+      return;
+    }
+    bar.classList.remove('hidden');
+    const st = S.stats(p);
+    $('dbPhp').style.width = (U.clamp(p.hp / st.maxHp, 0, 1) * 100).toFixed(1) + '%';
+    $('dbEhp').style.width = (U.clamp(d.ent.hp / d.ent.maxHp, 0, 1) * 100).toFixed(1) + '%';
+    const mid = $('dbMid');
+    mid.textContent = d.phase === 'count' ? Math.max(1, Math.ceil(d.t)) : '⚔';
+    mid.classList.toggle('count', d.phase === 'count');
+    const tag = $('dbTag');
+    tag.textContent = d.phase === 'count' ? '战 书' : '决 斗';
+    const nm = $('dbEnemy');
+    const txt = `${d.name} Lv.${d.ent.lv}`;
+    if (nm.textContent !== txt) nm.textContent = txt;
+  };
+
+  /* ================= AI 玩家右键菜单 ================= */
+  UI.closeAiMenu = function () {
+    const el = $('aiMenu');
+    if (el) el.remove();
+    if (UI._amOff) { document.removeEventListener('mousedown', UI._amOff, true); UI._amOff = null; }
+  };
+
+  UI.aiMenu = function (ent, cx, cy) {
+    UI.closeAiMenu();
+    const a = ent.agent;
+    const p = G.player;
+    if (!a || !p) return;
+    const g = AID.guild(a.guild);
+    const evil = (G.flags.evil || 0) >= 300;
+    const el = document.createElement('div');
+    el.id = 'aiMenu';
+    el.className = 'ai-menu';
+    el.innerHTML = `
+      <div class="am-top">
+        <b style="color:${ent.red ? '#ff6b6b' : U.hexA(ent.gcolor, 1)}">${U.esc(a.name)}</b>
+        <span>${U.esc(a.job)} Lv.${a.lv} · ${U.esc(g.name || '散人')}${ent.red ? ' · <b style="color:#ff6b6b">红名</b>' : ''}</span>
+      </div>
+      <div class="am-row"><span>态度</span><b style="color:${attCol(a.att)}">${attWord(a.att)} ${Math.round(a.att)}</b></div>
+      <div class="am-row"><span>状态</span><b>${ent.hostile ? '<span style="color:#ff6b6b">已敌对</span>' : ent.provoked ? '<span style="color:#ff9f43">被激怒</span>' : '和平'}</b></div>
+      <div class="am-btns">
+        <button data-am="duel" class="am-main">⚔ 决 斗</button>
+        <button data-am="taunt">挑 衅</button>
+        <button data-am="gift">送礼 200</button>
+        <button data-am="track">他在哪</button>
+      </div>
+      <div class="am-tip">${G.zone && G.zone.safe
+        ? '安全区内不能动手，按 M 出城再找他。'
+        : '决斗：接下就打，赢了声望 +18，不涨恶名。<br>强杀白名会涨恶名，恶名 300 变红名。' + (evil ? '<br><b style="color:#ff6b6b">你是红名，他会主动动手。</b>' : '')}</div>`;
+
+    document.getElementById('app').appendChild(el);
+    const w = el.offsetWidth || 230, h = el.offsetHeight || 180;
+    el.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, cx + 10)) + 'px';
+    el.style.top = Math.max(8, Math.min(window.innerHeight - h - 8, cy + 10)) + 'px';
+
+    el.querySelectorAll('[data-am]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const act = btn.dataset.am;
+        if (act === 'duel') { UI.closeAiMenu(); AI.duelAsk(ent); }
+        else if (act === 'taunt') { UI.closeAiMenu(); AI.taunt(ent); }
+        else if (act === 'gift') { UI.closeAiMenu(); AI.onPlayerGift(a, 200); }
+        else if (act === 'track') {
+          UI.closeAiMenu();
+          U.toast(`${a.name} 现在在 ${D.ZONES[a.zone] ? D.ZONES[a.zone].name : a.zone}`, 'good');
+        }
+      });
+    });
+
+    // 点空白处关掉
+    UI._amOff = ev => { if (!el.contains(ev.target)) UI.closeAiMenu(); };
+    setTimeout(() => document.addEventListener('mousedown', UI._amOff, true), 0);
   };
 
   UI.updateQuestHud = function () { UI.refreshHUD(); };
@@ -649,15 +748,17 @@ window.UI = (function () {
         <span class="rl">Lv.${r.lv}</span>
         <span class="rj">${U.esc(r.job)}</span>
         <span class="rg">${U.esc(r.guild)}</span>
+        <span class="rx">${(r.isPlayer || r.shadow) ? '' : `<button class="btn sm ghost" data-duel-ai="${r.id}">约战</button>`}</span>
       </div>`).join('');
     const rank = AI.playerRank();
     return `<div class="rank-head">
         <div>天榜（等级）</div>
         <div class="rh-me">你的名次：<b>第 ${rank} 位</b></div>
       </div>
-      <div class="rank-row head"><span class="rk">#</span><span class="rn">玩家</span><span class="rl">等级</span><span class="rj">职业</span><span class="rg">公会</span></div>
+      <div class="rank-row head"><span class="rk">#</span><span class="rn">玩家</span><span class="rl">等级</span><span class="rj">职业</span><span class="rg">公会</span><span class="rx"></span></div>
       ${rows}
-      <div class="ct-note">榜单是实时的：AI 也会练级、也会掉榜。前 20 名里至少 12 席是 AI——你要挤进去，就得真的比他们能打。</div>`;
+      <div class="ct-note">榜单是实时的：AI 也会练级、也会掉榜。前 20 名里至少 12 席是 AI——你要挤进去，就得真的比他们能打。<br>
+        「约战」会把你点的人叫到当前地图打一场决斗：赢了声望 +18，不涨恶名。</div>`;
   }
 
   function wRel() {
@@ -676,6 +777,7 @@ window.UI = (function () {
         <div class="rc-btns">
           <button class="btn sm ghost" data-gift-ai="${a.id}" ${p.gold < 200 ? 'disabled' : ''}>送礼 200金</button>
           <button class="btn sm ghost" data-track="${a.id}">他在哪</button>
+          <button class="btn sm ghost" data-duel-ai="${a.id}">约战</button>
         </div>
       </div>`;
     };
@@ -1010,6 +1112,8 @@ window.UI = (function () {
       ['W A S D', '移动'], ['鼠标左键', '普通攻击（按住连续攻击）'], ['鼠标指向', '瞄准要害 / 选择目标'],
       ['空格', '翻滚闪避（短暂无敌）'], ['1 2 3', '释放三个职业战技'], ['R', '使用金疮药'],
       ['Q', '切换姿态（进攻 / 坚守 / 游击）'], ['E', '与 NPC 对话、使用界门、占领资源点'],
+      ['X', '自由 PK 开关（出城后可用）'], ['Shift + 左键', '强制攻击（可打中立 AI 玩家）'],
+      ['鼠标右键', '点 AI 玩家：决斗 / 挑衅 / 送礼 / 查位置'],
       ['C I K J', '角色 / 背包 / 技能 / 任务'], ['T', '江湖（频道 / 日志 / 天榜 / 关系 / 传闻）'],
       ['P', '天榜'], ['F1', 'AI 生态调试（决策明细）'],
       ['F M U', '势力 / 地图 / 云存档'], ['Esc', '关闭面板'],
@@ -1018,6 +1122,14 @@ window.UI = (function () {
     return head('操 作 与 机 制', '纵横 · 单机版') + `<div class="p-body">
       <div class="p-cols">
         <div>
+          <div class="stat-block"><h3>P K 与 决 斗</h3>
+            <div style="font-size:11.5px;color:#8b95a8;line-height:1.85">
+              主城是安全区，谁都不能动手；出城后：<br>
+              ① <b>右键点 AI</b> →「决斗」下战书。他按脾气与等级决定接不接，接了 3 秒开打；赢的人声望 +18、拿金币，<b>不涨恶名</b>，残血认输也算你赢。<br>
+              ② 按住 <b style="color:#ff9f43">Shift</b> 左键（或按 <b style="color:#ff9f43">X</b> 开自由 PK）能打任何人；强杀白名 <b style="color:#ff6b6b">恶名 +100</b>。<br>
+              ③ 恶名 300 <b style="color:#ff6b6b">变红名</b>：掉落翻倍、全服狠人主动来杀你；会随时间消退，也能杀红名 AI 洗白（声望 +8）。<br>
+              ④ 天榜（P）与江湖·关系里的「约战」，能把榜上的人直接叫到面前。
+            </div>
           <div class="stat-block"><h3>操 作</h3>${keys}</div>
           <div class="stat-block"><h3>存 档</h3>
             <div style="font-size:11.5px;color:#8b95a8;line-height:1.9">
@@ -1025,6 +1137,7 @@ window.UI = (function () {
               一个账号有 3 个独立卡槽，可在云存档面板点「切换卡槽」回标题界面切换。
             </div>
             <button class="btn sm red" data-wipe style="margin-top:8px">删除当前卡槽存档</button>
+          </div>
           </div>
         </div>
         <div>
@@ -1427,6 +1540,14 @@ window.UI = (function () {
       panel.querySelectorAll('[data-track]').forEach(el => el.addEventListener('click', () => {
         const a = aiAgent(el.dataset.track);
         if (a) U.toast(`${a.name} 最近在 ${AI.zoneName(a.zone)} 出没`, 'good');
+      }));
+      // 天榜 / 关系面板：把对方叫来打一场
+      panel.querySelectorAll('[data-duel-ai]').forEach(el => el.addEventListener('click', () => {
+        const a = aiAgent(el.dataset.duelAi);
+        if (!a) { U.toast('查无此人', 'bad'); return; }
+        if (G.zone && G.zone.safe) { U.toast('安全区内不能决斗，先出城', 'bad'); return; }
+        UI.close();
+        AI.challengeRival(a);
       }));
     }
 

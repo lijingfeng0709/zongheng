@@ -181,13 +181,40 @@ window.E = (function () {
     }
   };
 
-  /* 玩家可攻击的目标：怪物 + 敌对 / 被挑衅的 AI 玩家 */
+  /* 是否允许 PVP：安全区（主城）内一律不行 */
+  E.pkAllowed = function () {
+    return !!(G.zone && !G.zone.safe && G.player && !G.player.dead);
+  };
+
+  /* 自由攻击开关：按住 Shift / Ctrl，或按 X 打开的 PK 模式 */
+  E.forcePk = function () {
+    return !!(G.pk && (G.pk.mode || G.pk.hold));
+  };
+
+  /* 玩家可攻击的目标：怪物 + 敌对/被挑衅/红名的 AI 玩家 */
   E.playerTargets = function () {
     const list = G.enemies.slice();
+    const p = G.player;
+    if (!p) return list;
+    if (!E.pkAllowed()) return list;      // 安全区里只打怪
+    const duelEnt = G.duel && G.duel.ent;
+    const force = E.forcePk();
     for (const a of (G.aiEnts || [])) {
-      if (!a.dead && (a.hostile || a.provoked)) list.push(a);
+      if (!a || a.dead) continue;
+      if (a.hostile || a.provoked || a.red || a === duelEnt || force) list.push(a);
     }
     return list;
+  };
+
+  /* 鼠标下的 AI 玩家（右键菜单用） */
+  E.aiAt = function (wx, wy, pad) {
+    let best = null, bd = 1e9;
+    for (const a of (G.aiEnts || [])) {
+      if (!a || a.dead) continue;
+      const d = U.dist(wx, wy, a.x, a.y - 4);
+      if (d < a.r + (pad || 12) && d < bd) { bd = d; best = a; }
+    }
+    return best;
   };
 
   /* 统一命中入口：怪物走 playerHit，AI 玩家走 playerHitAI */
@@ -291,6 +318,7 @@ window.E = (function () {
     const p = G.player, st = S.stats(p);
     opts = opts || {};
     if (!ent || ent.dead) return;
+    if (!E.pkAllowed()) { U.toast('安全区内不能 PK', 'bad'); return; }
     const weak = !!opts.weak;
     const crit = Math.random() * 100 < st.crit;
     let dmg = st.atk * mult * (1 - ent.def / (ent.def + 200));
@@ -298,6 +326,13 @@ window.E = (function () {
     if (weak) dmg *= 2.6;
     dmg = Math.max(1, Math.round(dmg * U.rand(0.93, 1.07)));
 
+    // 第一刀提示：告诉玩家这一下意味着什么
+    if (!ent.provoked && !ent.duel) {
+      const duelOn = !!(G.duel && G.duel.ent === ent);
+      if (!duelOn && !ent.red) {
+        U.log(`你向 <b>${U.esc(ent.name)}</b> 动手了。杀死白名玩家会涨恶名。`, 'bad');
+      }
+    }
     ent.hp -= dmg;
     ent.hitFlash = 0.14;
     ent.provoked = true;      // 打了他，他就还手
@@ -310,7 +345,8 @@ window.E = (function () {
     if (st.lifesteal > 0) p.hp = Math.min(st.maxHp, p.hp + dmg * st.lifesteal / 100);
 
     if (ent.hp <= 0) {
-      if (window.AI && AI.onPlayerKillAI) AI.onPlayerKillAI(ent);
+      const duel = !!(G.duel && G.duel.ent === ent);
+      if (window.AI && AI.onPlayerKillAI) AI.onPlayerKillAI(ent, { duel: duel, red: !!ent.red });
       else ent.dead = true;
     }
   };
@@ -368,24 +404,35 @@ window.E = (function () {
     p.dead = true;
     G.statsData.deaths++;
     U.sfx('die');
+    const inDuel = !!(G.duel && G.duel.ent === src);
     if (src && src.kind === 'ai' && window.AI && AI.onPlayerDeath) {
       try { AI.onPlayerDeath(src); } catch (e) {}
       p.killedBy = src.name;
     } else {
       p.killedBy = (src && src.name) ? src.name : '';
     }
-    const lost = Math.round(p.gold * 0.05);
+    if (inDuel && window.AI && AI.endDuel) { try { AI.endDuel('lose'); } catch (e) {} }
+    // 红名惩罚：掉更多钱，还要掉一件背包里的东西
+    const red = (G.flags.evil || 0) >= 300;
+    let lost = Math.round(p.gold * (red ? 0.25 : 0.05));
     p.gold = Math.max(0, p.gold - lost);
-    U.log(`你被击败了，遗落 ${lost} 金币。三秒后在落霞城醒来。`, 'bad');
-    E.showDeathScreen(lost);
+    let extra = '';
+    if (red && p.bag && p.bag.length) {
+      let bi = 0;
+      for (let i = 1; i < p.bag.length; i++) if ((p.bag[i].q || 0) > (p.bag[bi].q || 0)) bi = i;
+      const it = p.bag.splice(bi, 1)[0];
+      extra = `，<b style="color:#ff9b9b">${U.esc(it.name)}</b> 也掉了`;
+    }
+    U.log(`你被击败了，遗落 ${lost} 金币${extra}。三秒后在落霞城醒来。`, 'bad');
+    E.showDeathScreen(lost, extra);
   };
 
-  E.showDeathScreen = function (lost) {
+  E.showDeathScreen = function (lost, extra) {
     const p = G.player;
     const by = p.killedBy ? `被「${U.esc(p.killedBy)}」击杀` : '力 竭';
     const d = document.createElement('div');
     d.className = 'death-screen';
-    d.innerHTML = `<h2>${p.killedBy ? by : '力 竭'}</h2><p>${p.killedBy ? '技不如人。' : ''}遗落 ${lost} 金币 · 三秒后于落霞城重生</p>`;
+    d.innerHTML = `<h2>${p.killedBy ? by : '力 竭'}</h2><p>${p.killedBy ? '技不如人。' : ''}遗落 ${lost} 金币${extra || ''} · 三秒后于落霞城重生</p>`;
     document.getElementById('app').appendChild(d);
     setTimeout(() => {
       d.remove();
