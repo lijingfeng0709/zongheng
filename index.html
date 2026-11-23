@@ -29,7 +29,23 @@
       <div class="res online" id="hudOnline"><em>●</em><b>0</b></div>
       <div class="res gold"><em>◈</em><b id="hudGold">0</b></div>
       <div class="res rep"><em>✦</em><b id="hudRep">0</b></div>
+      <div class="res evil" id="hudEvil"><em>☠</em><b>0</b></div>
+      <div class="res pk" id="hudPk"><em>⚔</em><b>PK</b></div>
       <div class="res zone" id="hudZone">落霞城</div>
+    </div>
+
+    <!-- 决斗横幅：倒计时 / 双方血量 -->
+    <div class="duel-bar hidden" id="duelBar">
+      <div class="db-tag" id="dbTag">决 斗</div>
+      <div class="db-side">
+        <span class="db-name">你</span>
+        <div class="db-hp"><i id="dbPhp"></i></div>
+      </div>
+      <div class="db-mid" id="dbMid">3</div>
+      <div class="db-side r">
+        <div class="db-hp"><i id="dbEhp"></i></div>
+        <span class="db-name" id="dbEnemy">—</span>
+      </div>
     </div>
 
     <div class="quest-hud" id="questHud"></div>
@@ -145,6 +161,8 @@
         <span><kbd>E</kbd> 交互</span>
         <span><kbd>T</kbd> 江湖（世界频道）</span>
         <span><kbd>P</kbd> 天榜</span>
+        <span><kbd>右键</kbd> 决斗 AI 玩家</span>
+        <span><kbd>X</kbd> 自由 PK</span>
       </div>
     </div>
   </div>
